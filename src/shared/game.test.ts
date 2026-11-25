@@ -138,3 +138,12 @@ test('다시 시작하면 그 방에서 올린 처치 수는 되돌린다 (점�
   assert.equal(s.kills, 0);
   assert.equal(s.slowmo, false);
 });
+
+test('빨라진 탄도 얇은 적(NullPointerException)을 건너뛰지 않는다 (거리마다)', () => {
+  for (let d = 60; d <= 360; d += 7) { // 첫 방에서 책상(x 480~512) 앞까지
+    const s = newGame(1); s.rng = () => 0.99;
+    s.enemies = [enemy(s, { kind: 'npe', x: s.p.x + d })];
+    run(s, { ...IDLE, aim: 0, fire: true }); run(s, IDLE, 12);
+    assert.equal(s.kills, 1, `거리 ${d}px 에서 빗나감`);
+  }
+});

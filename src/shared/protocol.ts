@@ -54,7 +54,8 @@ export interface SnapMsg {
   actAck: number;
   aim: number; dead: boolean; slowmo: boolean; meter: number;
   enemies: EnemyView[];
-  bullets: { id: number; x: number; y: number; enemy: boolean }[];
+  /** 보이는 탄. vx · vy 는 날아가는 방향 · 속도 (화면이 방향대로 돌리고, 틱 사이를 이어 그린다) */
+  bullets: { id: number; x: number; y: number; vx: number; vy: number; enemy: boolean }[];
   mags: { id: number; x: number; y: number }[];
   flashes: { x: number; y: number; enemy: boolean }[];
   impacts: { x: number; y: number }[];
@@ -89,7 +90,7 @@ export function snapshot(s: State, ack = 0, actAck = 0): SnapMsg {
       aim: e.aimT > 0 || e.burst > 0 ? r2(e.aimAng) : null, grabbed: p.melee > 0 && p.meleeTarget === e.id,
     })),
     // 내 탄도 보이는 자리에서만 보낸다 (보이지 않는 곳에서 사라지면 숨은 적의 자리가 드러난다)
-    bullets: s.bullets.filter(b => sees(b.x, b.y)).map(b => ({ id: b.id, x: r1(b.x), y: r1(b.y), enemy: b.enemy })),
+    bullets: s.bullets.filter(b => sees(b.x, b.y)).map(b => ({ id: b.id, x: r1(b.x), y: r1(b.y), vx: Math.round(b.vx), vy: Math.round(b.vy), enemy: b.enemy })),
     mags: s.mags.filter(m => sees(m.x, m.y - 6)).map(m => ({ id: m.id, x: m.x, y: m.y })),
     flashes: s.flashes.filter(f => !f.enemy || sees(f.x, f.y)).map(f => ({ x: r1(f.x), y: r1(f.y), enemy: f.enemy })),
     impacts: s.impacts.filter(i => sees(i.x, i.y)).map(i => ({ x: r1(i.x), y: r1(i.y) })),

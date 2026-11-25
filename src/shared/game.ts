@@ -14,7 +14,7 @@ export const AUTO_AIM = 0.12;      // 이 각도(라디안) 안의 보이는 적
 export const MELEE = { reach: 40, time: 0.4 };
 export const CHECK_TIME = 0.6;
 export const RESPAWN_TIME = 1.4;
-const PLAYER_BULLET = 1100, ENEMY_BULLET = 460;
+export const PLAYER_BULLET = 1800, ENEMY_BULLET = 460;
 
 export interface EnemyDef { label: string; hp: number; speed: number; w: number; h: number; telegraph: number; cd: number; shots: number; burstGap: number; pellets: number; spread: number; range: number }
 export const ENEMY: Record<EnemyKind, EnemyDef> = {
@@ -236,7 +236,8 @@ export function step(s: State, inp: Input, dt: number): void {
 
   // 탄
   for (const b of s.bullets) {
-    const steps = 3, sx = b.vx * wdt / steps, sy = b.vy * wdt / steps;
+    // 빠른 탄이 얇은 적을 건너뛰지 않게 잘게 나눠 움직인다 (1800px/s ÷ 30틱 ÷ 6 = 10px)
+    const steps = 6, sx = b.vx * wdt / steps, sy = b.vy * wdt / steps;
     for (let i = 0; i < steps && b.life > 0; i++) {
       b.x += sx; b.y += sy;
       if (solid(s.map, b.x, b.y)) { b.life = 0; s.impacts.push({ x: b.x, y: b.y }); break; }
