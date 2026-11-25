@@ -21,6 +21,15 @@ export interface ReleaseNote {
 /** 최신 버전이 맨 위 */
 export const RELEASES: readonly ReleaseNote[] = [
   {
+    version: '0.4.2',
+    date: '2026-11-25',
+    title: '시야에서 벗어나면 서서히 흐려져요',
+    items: [
+      '적과 탄창이 시야에서 벗어나면 툭 사라지지 않고 서서히 흐려져요.',
+      '시야에 들어올 때도 서서히 나타나요.',
+    ],
+  },
+  {
     version: '0.4.1',
     date: '2026-11-25',
     title: '판 기록을 서버에 남겨요',
