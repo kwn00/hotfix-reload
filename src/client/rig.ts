@@ -47,9 +47,9 @@ const FRAME = [
   '....kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk.',
   '...kddddddddddddddddddddddddddddddddddk.',
   '..kdddddddddddddkkkkkkkkkkkkkdddddddddk.',
-  '..kddddddddddddk.....k......kkkkkkkkk..',
-  '..kdddddddddddk.....kk.....k...........',
-  '..kddmdmdmddddk.....k.....k............',
+  '..kddddddddddddk............kkkkkkkkk..',
+  '..kdddddddddddk............k...........',
+  '..kddmdmdmddddk...........k............',
   '..kdmdmdmdmdddk..........k.............',
   '...kddmdmdmddddkkkkkkkkkk..............',
   '...kdmdmdmdmddk........................',
@@ -101,6 +101,8 @@ export class GunRig {
 
   private flies: Fly[] = [];
   private gunY = 0;
+  private trig: THREE.Group;
+  private trigPull = 0;
   private gunX = 0;
   // 애니메이션 상태
   private slideX = 0; private slideTarget = 0; private slideHold = 0;
@@ -119,6 +121,9 @@ export class GunRig {
     const rim = new THREE.DirectionalLight(0x89b4fa, 1.6); rim.position.set(60, -10, -60); this.scene.add(rim);
 
     const frame = voxels(cellsOf(FRAME), 5, { roughness: 0.8, metalness: 0.1 });
+    // 방아쇠는 따로 (누르는 순간 화면에서 바로 당긴다)
+    this.trig = voxels([{ x: 21, y: 3, c: 'n' }, { x: 20, y: 4, c: 'n' }, { x: 21, y: 4, c: 'n' }, { x: 20, y: 5, c: 'n' }], 2, { roughness: 0.5, metalness: 0.5 });
+    frame.add(this.trig); this.trig.position.y = 0;
     frame.position.y = -7;
     this.slide = voxels(cellsOf(SLIDE), 6, { roughness: 0.4, metalness: 0.6 });
     this.mag = voxels(cellsOf(MAG), 3);
@@ -142,20 +147,20 @@ export class GunRig {
     }
   }
 
-  /** w · h: 아래 레터박스의 크기. 총이 기울어도 띠 밖으로 나가지 않게 크기를 정한다 */
-  resize(w: number, h: number) {
+  /** w · h: 그리는 영역 (띠보다 위로 넉넉하고 투명하다). band: 아래 레터박스 높이 (총 · 칸의 크기와 자리를 정한다) */
+  resize(w: number, h: number, band = h) {
     this.renderer.setSize(w, h, false);
     this.camera.left = 0; this.camera.right = w; this.camera.top = h; this.camera.bottom = 0; this.camera.updateProjectionMatrix();
     // 총: 오른쪽 아래에 크게. 칸: 왼쪽 아래에 나란히
     const narrow = w < 700;
-    const scale = Math.min(w * (narrow ? 0.5 : 0.38) / 44, (h - 6) / 31);
+    const scale = Math.min(w * (narrow ? 0.5 : 0.38) / 44, (band - 6) / 31);
     this.pivot.scale.set(scale * this.face, scale, scale);
     // 총 그림의 세로 가운데(슬라이드 위 0 ~ 탄창 아래 -27)를 띠 가운데에
-    this.gunY = h / 2 + (13.5 + GUN_C.y) * scale;
+    this.gunY = band / 2 + (13.5 + GUN_C.y) * scale;
     // 총구 앞에 화염이 들어갈 자리를 남긴다 (오른쪽 끝에 붙이면 화염이 화면 밖으로 잘린다)
     this.gunX = w - scale * (narrow ? 52 : 58) + GUN_C.x * scale;
     this.pivot.position.set(this.gunX, this.gunY, 0);
-    const slotScale = Math.max(3, Math.min(scale * 0.7, (h - 30) / 12));
+    const slotScale = Math.max(3, Math.min(scale * 0.7, (band - 30) / 12));
     const gap = narrow ? w * 0.11 : Math.min(110, w * 0.08);
     this.layout.slots = [];
     for (let i = 0; i < 4; i++) {
@@ -197,10 +202,14 @@ export class GunRig {
     this.flies = [];
   }
 
-  update(s: SnapMsg, aim: number, dt: number, now: number, fresh: boolean) {
+  /** 방아쇠: 클릭하는 순간 (탄이 나갔는지는 서버 답을 기다린다) */
+  trigger() { this.trigPull = 1; }
+
+  /** events: 이번 프레임에 보여 줄 사건 (서버 사건 + 화면에서 미리 보여 주는 장전) */
+  update(s: SnapMsg, aim: number, dt: number, now: number, events: readonly string[]) {
     const sc = this.pivot.scale.y;
     const fx = this.face; // 날아가는 방향도 총을 따라 뒤집는다
-    for (const e of fresh ? s.events : []) {
+    for (const e of events) {
       if (e === 'fire' || e === 'jam') {
         this.slideX = -9; this.slideTarget = 0; this.recoil = 1;
         this.muzzle.intensity = 400;
@@ -210,6 +219,11 @@ export class GunRig {
         this.slideTarget = -11; this.slideHold = 0.14;
         if (e === 'rack-waste') this.fly(this.tpl.round, this.portPos(), new THREE.Vector3(fx * 140, 300, 0), sc * 0.9);
         if (e === 'unjam') { this.stovepipe.visible = false; this.fly(this.tpl.stove, this.portPos(), new THREE.Vector3(fx * 160, 280, 0), sc * 0.9); }
+      } else if (e === 'rack-waste-fx') {
+        // 슬라이드는 화면에서 이미 당겼다: 서버가 알려 준, 튀어나온 탄만
+        this.fly(this.tpl.round, this.portPos(), new THREE.Vector3(fx * 140, 300, 0), sc * 0.9);
+      } else if (e === 'unjam-fx') {
+        this.stovepipe.visible = false; this.fly(this.tpl.stove, this.portPos(), new THREE.Vector3(fx * 160, 280, 0), sc * 0.9);
       } else if (e === 'eject') {
         this.magGone = true;
         const at = new THREE.Vector3(MAG_OFFSET.x + 3, -7 - MAG_OFFSET.y - 5, 0).applyMatrix4(this.gun.matrixWorld);
@@ -237,6 +251,8 @@ export class GunRig {
     // 총구 화염
     this.muzzle.intensity *= Math.pow(0.0005, dt);
 
+    this.trigPull *= Math.pow(0.0005, dt);
+    this.trig.position.x = -1.2 * Math.min(1, this.trigPull * 1.5);
     // 반동 · 숨쉬기 · 조준 방향에 따라 살짝 기울기
     this.recoil *= Math.pow(0.002, dt);
     // 왼쪽을 겨누면 좌우로 뒤집고, 위를 겨누면 어느 쪽이든 총구가 올라간다 (반동도 총구 쪽으로 튄다)

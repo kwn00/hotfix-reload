@@ -6,7 +6,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import type { RoomMsg, SnapMsg, EnemyView } from '../shared/protocol.ts';
-import { ENEMY, TILE } from '../shared/game.ts';
+import { ENEMY, TILE, TICK, SLOWMO } from '../shared/game.ts';
 import { SPRITES, bake } from './art.ts';
 
 const DEPTH = 150;            // 방의 깊이 (벽 블록의 z 길이)
@@ -287,18 +287,15 @@ export class Scene3D {
 
     // 탄
     const seenB = new Set<number>();
+    // 탄은 서버가 보낸 방향(vx, vy)으로 돌리고, 다음 스냅샷까지는 그 방향으로 이어 그린다 (뚝뚝 끊기지 않게)
+    const ahead = t * TICK * (s.slowmo ? SLOWMO.world : 1);
     for (const b of s.bullets) {
       seenB.add(b.id);
       let m = this.bullets.get(b.id);
-      if (!m) {
-        m = new THREE.Mesh(this.bulletGeo, b.enemy ? this.enemyBulletMat : this.bulletMat);
-        this.bullets.set(b.id, m); this.dyn.add(m);
-        m.userData.prev = { x: b.x, y: b.y };
-      }
-      const pv = m.userData.prev as { x: number; y: number };
-      m.rotation.z = Math.atan2(-(b.y - pv.y), b.x - pv.x);
-      m.position.set(b.x, -b.y, 4);
-      m.userData.prev = { x: b.x, y: b.y };
+      if (!m) { m = new THREE.Mesh(this.bulletGeo, b.enemy ? this.enemyBulletMat : this.bulletMat); this.bullets.set(b.id, m); this.dyn.add(m); }
+      m.rotation.z = Math.atan2(-b.vy, b.vx);
+      m.scale.set(b.enemy ? 0.7 : 1.4, b.enemy ? 2 : 1, b.enemy ? 2 : 1); // 내 탄: 얇고 긴 예광탄 줄기, 적 탄: 짧고 조금 굵게 (피할 수 있게 잘 보이도록)
+      m.position.set(b.x + b.vx * ahead, -(b.y + b.vy * ahead), 4);
     }
     for (const [id, m] of this.bullets) if (!seenB.has(id)) { this.dyn.remove(m); this.bullets.delete(id); }
 
@@ -359,8 +356,8 @@ export class Scene3D {
   }
 
   // 돌려 쓰는 도형 · 재질 (탄 · 탄창은 계속 생겼다 사라지므로 새로 만들지 않는다)
-  private bulletGeo = new THREE.BoxGeometry(14, 2.5, 2.5);
-  private bulletMat = new THREE.MeshBasicMaterial({ color: 0xffe08a });
+  private bulletGeo = new THREE.BoxGeometry(18, 1.2, 1.2);
+  private bulletMat = new THREE.MeshBasicMaterial({ color: 0xfff1c4 });
   private enemyBulletMat = new THREE.MeshBasicMaterial({ color: 0xff6b6b });
   private magGeo = new THREE.BoxGeometry(8, 12, 5);
   private magMat = new THREE.MeshStandardMaterial({ color: 0x313244, emissive: 0xf9e2af, emissiveIntensity: 0.5 });

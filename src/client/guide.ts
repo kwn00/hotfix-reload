@@ -43,8 +43,8 @@ export class Guide {
 
   reset() { this.need = null; }
 
-  update(s: SnapMsg, fresh: boolean) {
-    if (fresh) for (const e of s.events) {
+  update(s: SnapMsg, events: readonly string[]) {
+    for (const e of events) {
       if (e === 'insert') this.need = 'rack';
       else if (e === 'jam' || e === 'jammed') this.need = 'unjam';
       else if (e === 'dry') this.need = this.need ?? 'dry';

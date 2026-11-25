@@ -93,3 +93,17 @@ test('입력이 너무 쌓이면 오래된 것을 버리되 그 안의 쏘기 ·
   for (let i = 0; i < 10; i++) s.tick();
   assert.equal(s.state!.gun.mag, null, '버려진 입력의 탄창 빼기도 처리됨');
 });
+
+test('총이 바빠 기다린 장전 동작은 처리된 뒤에 actAck 가 올라간다', () => {
+  const snaps: { ack: number; actAck: number }[] = [];
+  const s = new Session(m => { if (m.t === 'snap') snaps.push({ ack: m.ack, actAck: m.actAck }); });
+  s.handle({ t: 'start' });
+  s.state!.gun.busy = 0.2; // 6틱쯤 바쁨
+  s.handle({ t: 'in', ...base, seq: 50, act: 'eject' });
+  s.tick();
+  assert.equal(snaps[0].ack, 50);
+  assert.equal(snaps[0].actAck, 0, '아직 처리 안 됨');
+  for (let i = 0; i < 10; i++) s.tick();
+  assert.equal(snaps.at(-1)!.actAck, 50);
+  assert.equal(s.state!.gun.mag, null);
+});

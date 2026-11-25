@@ -33,6 +33,7 @@ export function sfx(ev: string) {
     case 'dead': tone(120, 0.6, 'sawtooth', 0.08, 0.3); break;
     case 'kill': tone(240, 0.08, 'square', 0.05, 0.5); break;
     case 'takedown': noise(0.08, 0.12); tone(160, 0.1, 'square', 0.06); break;
+    case 'trigger': tone(1500, 0.015, 'square', 0.03); break;
     case 'door': tone(523, 0.08, 'triangle'); setTimeout(() => tone(784, 0.1, 'triangle'), 80); break;
   }
 }

@@ -7,7 +7,7 @@ import { State, Action, ACTION_LIST, Alarm, EnemyKind, CHECK_TIME, visible, clea
 import { ROOMS } from './level.ts';
 import { GunEvent } from './gun.ts';
 
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 export const MAX_MSG_BYTES = 256;
 
 export type ClientMsg =
@@ -50,9 +50,12 @@ export interface SnapMsg {
   p: { x: number; y: number; vy: number; ground: boolean; crouch: boolean; face: 1 | -1; hp: number; hurt: boolean; melee: boolean };
   /** 서버가 처리한 마지막 입력 번호 */
   ack: number;
+  /** 실제로 처리한 마지막 장전 동작의 입력 번호 (총이 바빠 기다린 동작은 처리된 뒤에 올라간다) */
+  actAck: number;
   aim: number; dead: boolean; slowmo: boolean; meter: number;
   enemies: EnemyView[];
-  bullets: { id: number; x: number; y: number; enemy: boolean }[];
+  /** 보이는 탄. vx · vy 는 날아가는 방향 · 속도 (화면이 방향대로 돌리고, 틱 사이를 이어 그린다) */
+  bullets: { id: number; x: number; y: number; vx: number; vy: number; enemy: boolean }[];
   mags: { id: number; x: number; y: number }[];
   flashes: { x: number; y: number; enemy: boolean }[];
   impacts: { x: number; y: number }[];
@@ -74,12 +77,12 @@ export function roomMsg(s: State): RoomMsg {
 const r1 = (v: number) => Math.round(v * 10) / 10;
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
-export function snapshot(s: State, ack = 0): SnapMsg {
+export function snapshot(s: State, ack = 0, actAck = 0): SnapMsg {
   const g = s.gun, p = s.p, eye = pEye(p);
   const sees = (x: number, y: number) => clear(s.map, eye.x, eye.y, x, y);
   return {
     t: 'snap',
-    ack,
+    ack, actAck,
     p: { x: p.x, y: p.y, vy: p.vy, ground: p.onGround, crouch: p.crouch, face: p.face, hp: p.hp, hurt: p.invuln > 0, melee: p.melee > 0 },
     aim: r2(s.aim), dead: s.dead > 0, slowmo: s.slowmo, meter: r2(s.meter),
     enemies: s.enemies.filter(e => e.hp > 0 && visible(s, e)).map(e => ({
@@ -87,7 +90,7 @@ export function snapshot(s: State, ack = 0): SnapMsg {
       aim: e.aimT > 0 || e.burst > 0 ? r2(e.aimAng) : null, grabbed: p.melee > 0 && p.meleeTarget === e.id,
     })),
     // 내 탄도 보이는 자리에서만 보낸다 (보이지 않는 곳에서 사라지면 숨은 적의 자리가 드러난다)
-    bullets: s.bullets.filter(b => sees(b.x, b.y)).map(b => ({ id: b.id, x: r1(b.x), y: r1(b.y), enemy: b.enemy })),
+    bullets: s.bullets.filter(b => sees(b.x, b.y)).map(b => ({ id: b.id, x: r1(b.x), y: r1(b.y), vx: Math.round(b.vx), vy: Math.round(b.vy), enemy: b.enemy })),
     mags: s.mags.filter(m => sees(m.x, m.y - 6)).map(m => ({ id: m.id, x: m.x, y: m.y })),
     flashes: s.flashes.filter(f => !f.enemy || sees(f.x, f.y)).map(f => ({ x: r1(f.x), y: r1(f.y), enemy: f.enemy })),
     impacts: s.impacts.filter(i => sees(i.x, i.y)).map(i => ({ x: r1(i.x), y: r1(i.y) })),

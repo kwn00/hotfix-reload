@@ -18,7 +18,9 @@ export class Session {
   private ack = 0;
   private lastRoom = -1;
   /** 일회성 동작. 총이 동작 중이면 끝날 때까지 기다렸다 처리한다 (연타로 빨라지지 않게) */
-  private pending = { fire: false, melee: false, jump: false, interact: false, acts: [] as NonNullable<Input['act']>[] };
+  private pending = { fire: false, melee: false, jump: false, interact: false, acts: [] as { act: NonNullable<Input['act']>; seq: number }[] };
+  /** 실제로 처리한 마지막 장전 동작의 입력 번호 (화면이 미리 보여 준 장전을 언제 내려놓을지 안다) */
+  private actAck = 0;
   /** 쌓아 둘 수 있는 장전 동작 수 (빠르게 R → 1 → F → Space 를 눌러도 순서대로 처리한다) */
   static readonly MAX_ACTS = 4;
 
@@ -28,7 +30,7 @@ export class Session {
     if (m.t === 'start') {
       this.state = newGame(randomInt(2 ** 31));
       this.lastRoom = -1;
-      this.queue = []; this.last = { ...IDLE }; this.ack = 0;
+      this.queue = []; this.last = { ...IDLE }; this.ack = 0; this.actAck = 0;
       this.pending = { fire: false, melee: false, jump: false, interact: false, acts: [] };
       return;
     }
@@ -44,7 +46,10 @@ export class Session {
     if (m.melee) p.melee = true;
     if (m.jump) p.jump = true;
     if (m.interact) p.interact = true;
-    if (m.act && p.acts.length < Session.MAX_ACTS) p.acts.push(m.act);
+    if (m.act) {
+      if (p.acts.length < Session.MAX_ACTS) p.acts.push({ act: m.act, seq: m.seq });
+      else this.actAck = Math.max(this.actAck, m.seq); // 넘쳐서 버린 동작도 "처리함"으로 알려 화면이 내려놓게 한다
+    }
   }
 
   tick(): void {
@@ -63,11 +68,11 @@ export class Session {
     }
     const p = this.pending, busy = s.gun.busy > 0 || s.p.melee > 0;
     const inp: Input = { ...this.last, jump: p.jump, interact: p.interact,
-      fire: busy ? false : p.fire, melee: busy ? false : p.melee, act: busy ? null : (p.acts[0] ?? null) };
+      fire: busy ? false : p.fire, melee: busy ? false : p.melee, act: busy ? null : (p.acts[0]?.act ?? null) };
     p.jump = false; p.interact = false;
-    if (!busy) { p.fire = false; p.melee = false; p.acts.shift(); }
+    if (!busy) { p.fire = false; p.melee = false; const done = p.acts.shift(); if (done) this.actAck = done.seq; }
     step(s, inp, TICK);
     if (s.room !== this.lastRoom) { this.lastRoom = s.room; this.send(roomMsg(s)); }
-    this.send(snapshot(s, this.ack));
+    this.send(snapshot(s, this.ack, this.actAck));
   }
 }
