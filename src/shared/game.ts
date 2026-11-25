@@ -2,6 +2,8 @@
 // 좌표: x 오른쪽, y 아래. 사람의 (x, y) 는 발 가운데.
 import { Gun, GunEvent, newGun, cloneGun, tick as gunTick, fire, eject, insert, rack, grab, stow, pickupMag } from './gun.ts';
 import { ROOMS, TILE, parseRoom, Parsed, EnemyKind } from './level.ts';
+// 브라우저에서 돈 판을 서버가 다시 돌려 똑같은 결과를 얻어야 하므로 Math.sin 등 대신 결정적 수학을 쓴다
+import { dsin, dcos, datan2, dhypot } from './dmath.ts';
 
 export { TILE };
 export type { EnemyKind };
@@ -98,7 +100,7 @@ function physics(m: Parsed, o: { x: number; y: number; vy: number }, dx: number,
 
 /** 두 점 사이에 벽이나 책상이 없는가 */
 export function clear(m: Parsed, x0: number, y0: number, x1: number, y1: number) {
-  const d = Math.hypot(x1 - x0, y1 - y0), n = Math.ceil(d / 6);
+  const d = dhypot(x1 - x0, y1 - y0), n = Math.ceil(d / 6);
   for (let i = 1; i < n; i++) if (solid(m, x0 + (x1 - x0) * i / n, y0 + (y1 - y0) * i / n)) return false;
   return true;
 }
@@ -194,7 +196,7 @@ export function step(s: State, inp: Input, dt: number): void {
 
   const p = s.p;
   s.aim = inp.aim;
-  p.face = Math.cos(inp.aim) >= 0 ? 1 : -1;
+  p.face = dcos(inp.aim) >= 0 ? 1 : -1;
   p.invuln = Math.max(0, p.invuln - wdt);
   gunTick(s.gun, pdt);
   s.checkHold = inp.check ? s.checkHold + dt : 0;
@@ -282,12 +284,12 @@ export function shoot(s: State) {
   let best = AUTO_AIM;
   for (const e of s.enemies) {
     if (e.hp <= 0 || !visible(s, e)) continue;
-    const c = eChest(e), a = Math.atan2(c.y - g.y, c.x - g.x);
-    const diff = Math.abs(Math.atan2(Math.sin(a - s.aim), Math.cos(a - s.aim)));
+    const c = eChest(e), a = datan2(c.y - g.y, c.x - g.x);
+    const diff = Math.abs(datan2(dsin(a - s.aim), dcos(a - s.aim)));
     if (diff < best && clear(s.map, g.x, g.y, c.x, c.y)) { best = diff; ang = a; }
   }
-  s.bullets.push({ id: s.nextId++, x: g.x + Math.cos(ang) * 14, y: g.y + Math.sin(ang) * 14, vx: Math.cos(ang) * PLAYER_BULLET, vy: Math.sin(ang) * PLAYER_BULLET, life: 1, enemy: false });
-  s.flashes.push({ x: g.x + Math.cos(ang) * 16, y: g.y + Math.sin(ang) * 16, enemy: false });
+  s.bullets.push({ id: s.nextId++, x: g.x + dcos(ang) * 14, y: g.y + dsin(ang) * 14, vx: dcos(ang) * PLAYER_BULLET, vy: dsin(ang) * PLAYER_BULLET, life: 1, enemy: false });
+  s.flashes.push({ x: g.x + dcos(ang) * 16, y: g.y + dsin(ang) * 16, enemy: false });
   // 총소리를 들은 적은 바로 반응한다
   for (const e of s.enemies) if (Math.abs(e.x - s.p.x) < 400) { e.alert = Math.min(e.alert, 0.15); e.heard = 6; }
 }
@@ -322,7 +324,7 @@ function enemyThink(s: State, e: Enemy, dt: number) {
   e.cd = Math.max(0, e.cd - dt);
   e.heard = Math.max(0, e.heard - dt);
   const c = eChest(e), target = pChest(p);
-  const dist = Math.hypot(target.x - c.x, target.y - c.y);
+  const dist = dhypot(target.x - c.x, target.y - c.y);
   const sees = s.dead <= 0 && dist < d.range && clear(s.map, c.x, c.y - 8, target.x, target.y);
   if (sees && !e.sees) e.alert = Math.max(e.alert, 0.35);
   e.sees = sees;
@@ -337,12 +339,12 @@ function enemyThink(s: State, e: Enemy, dt: number) {
     e.dir = target.x < e.x ? -1 : 1;
     if (e.alert > 0) { e.alert -= dt; return; }
     if (e.aimT > 0) {
-      e.aimAng = Math.atan2(target.y - c.y, target.x - c.x);
+      e.aimAng = datan2(target.y - c.y, target.x - c.x);
       e.aimT -= dt;
       if (e.aimT <= 0) { e.burst = d.shots; e.burstT = 0; e.cd = d.cd; }
       return;
     }
-    if (e.cd <= 0) { e.aimT = d.telegraph; e.aimAng = Math.atan2(target.y - c.y, target.x - c.x); return; }
+    if (e.cd <= 0) { e.aimT = d.telegraph; e.aimAng = datan2(target.y - c.y, target.x - c.x); return; }
     // 쏘기를 기다리는 동안 거리를 맞춘다
     const want = d.range * 0.5;
     const move = Math.abs(target.x - e.x) > want ? e.dir : 0;
@@ -367,7 +369,7 @@ function enemyShot(s: State, e: Enemy) {
   const gx = c.x + e.dir * 12, gy = c.y;
   for (let i = 0; i < d.pellets; i++) {
     const a = e.aimAng + (s.rng() - 0.5) * d.spread * (d.pellets > 1 ? 1 : 2);
-    s.bullets.push({ id: s.nextId++, x: gx, y: gy, vx: Math.cos(a) * ENEMY_BULLET, vy: Math.sin(a) * ENEMY_BULLET, life: d.range / ENEMY_BULLET * 1.4, enemy: true });
+    s.bullets.push({ id: s.nextId++, x: gx, y: gy, vx: dcos(a) * ENEMY_BULLET, vy: dsin(a) * ENEMY_BULLET, life: d.range / ENEMY_BULLET * 1.4, enemy: true });
   }
   s.flashes.push({ x: gx, y: gy, enemy: true });
   s.events.push('enemy-fire');
