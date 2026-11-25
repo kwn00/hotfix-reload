@@ -1,0 +1,16 @@
+:root { --bg: #0d1117; --fg: #e6edf3; --dim: #8b949e; --accent: #3fb950; --danger: #f85149; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: ui-monospace, Menlo, Consolas, monospace; overflow: hidden; touch-action: none; }
+canvas { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; }
+.panel { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 16px; background: rgba(13,17,23,.92); text-align: center; }
+.panel.hidden { display: none; }
+h1 { margin: 0; color: var(--accent); font-size: clamp(28px, 8vw, 48px); }
+.sub { color: var(--dim); margin: 4px 0; max-width: 520px; }
+.keys { list-style: none; padding: 0; margin: 8px 0; line-height: 1.8; font-size: 14px; }
+code { color: var(--accent); }
+button { font: inherit; background: #21262d; color: var(--fg); border: 1px solid #30363d; border-radius: 6px; padding: 10px 18px; cursor: pointer; }
+#start { background: var(--accent); color: #0d1117; font-weight: bold; font-size: 18px; }
+#touch { position: fixed; right: 12px; bottom: 12px; display: none; grid-template-columns: repeat(3, 64px); gap: 8px; }
+#touch button { height: 56px; padding: 0; font-size: 12px; opacity: .85; }
+#touch .fire { background: var(--danger); }
+@media (pointer: coarse) { #touch { display: grid; } }

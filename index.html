@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>핫픽스 리로드</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="title" class="panel">
+    <h1>핫픽스 리로드</h1>
+    <p class="sub">금요일 배포가 터졌다. 권총 한 자루와 탄창 몇 개로 롤백 터미널까지.</p>
+    <ul class="keys">
+      <li><b>WASD</b> 이동 · <b>마우스</b> 조준 · <b>클릭</b> 쏘기</li>
+      <li><b>R</b> 탄창 빼기 · <b>F</b> 탄창 꽂기 · <b>Space</b> 슬라이드 당기기</li>
+      <li><b>E</b> 낱개 탄 채우기 · <b>Q</b> 꾹 누르면 <code>git status</code> (남은 탄 확인)</li>
+    </ul>
+    <p class="sub">탄 수는 화면에 안 나와요. 직접 세세요.</p>
+    <button id="start">배포 시작</button>
+    <p id="best" class="sub"></p>
+  </div>
+  <div id="touch">
+    <button data-k="r">탄창<br>빼기</button>
+    <button data-k="f">탄창<br>꽂기</button>
+    <button data-k="space">슬라이드</button>
+    <button data-k="e">탄<br>채우기</button>
+    <button data-k="q">점검</button>
+    <button data-k="fire" class="fire">쏘기</button>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
