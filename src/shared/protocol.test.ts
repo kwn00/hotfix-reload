@@ -18,15 +18,15 @@ test('스냅샷에 탄 수는 점검할 때만 담긴다 (주운 탄창의 탄 �
   assert.deepEqual(snapshot(s).ammo, { chamber: 1, mag: 8, slots: [8, 8, null, null], grip: null });
 });
 
-test('벽 너머의 적과 그 탄은 스냅샷에 없다', () => {
+test('벽 너머의 적 · 탄도 스냅샷에 있되, 시야선 밖이면 seen=false 로 표시된다', () => {
   const s = newGame(1);
   const tx = Math.floor(s.p.x / 32) + 3;
   for (let y = 0; y < s.map.h; y++) s.map.tiles[y * s.map.w + tx] = 1;
   s.enemies = [enemy({ id: 1, x: (tx + 3) * 32, y: s.p.y }), enemy({ id: 2, x: s.p.x + 50, y: s.p.y })];
   s.bullets = [{ id: 7, x: (tx + 2) * 32, y: s.p.y - 30, vx: 0, vy: 0, life: 1, enemy: true }];
   const snap = snapshot(s);
-  assert.deepEqual(snap.enemies.map(e => e.id), [2]);
-  assert.equal(snap.bullets.length, 0);
+  assert.deepEqual(snap.enemies.map(e => [e.id, e.seen]), [[1, false], [2, true]]);
+  assert.deepEqual(snap.bullets.map(b => [b.id, b.seen]), [[7, false]]);
 });
 
 test('방 정보에는 지형만 있고 적 배치는 없다', () => {

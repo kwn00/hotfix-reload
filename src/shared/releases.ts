@@ -21,6 +21,15 @@ export interface ReleaseNote {
 /** 최신 버전이 맨 위 */
 export const RELEASES: readonly ReleaseNote[] = [
   {
+    version: '0.4.2',
+    date: '2026-11-25',
+    title: '가려진 적도 흐리게 보여요',
+    items: [
+      '벽이나 책상 너머의 적과 탄창도 보여요. 시야 밖이면 살짝 흐리게 보여요.',
+      '시야에 들어오고 나갈 때 서서히 선명해지고 흐려져요.',
+    ],
+  },
+  {
     version: '0.4.1',
     date: '2026-11-25',
     title: '판 기록을 서버에 남겨요',
