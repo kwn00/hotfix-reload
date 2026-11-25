@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>핫픽스 리로드</title>
-  <link rel="stylesheet" href="/src/style.css" />
+  <link rel="stylesheet" href="/src/client/style.css" />
 </head>
 <body>
   <canvas id="c"></canvas>
@@ -18,7 +18,16 @@
     </ul>
     <p class="sub">탄 수는 화면에 안 나와요. 직접 세세요.</p>
     <button id="start">배포 시작</button>
+    <p id="status" class="sub" role="status"></p>
     <p id="best" class="sub"></p>
+    <button id="version" class="version" aria-label="새 소식 보기"></button>
+  </div>
+  <div id="news" class="panel news hidden" role="dialog" aria-label="새 소식">
+    <div class="news-box">
+      <h2>새 소식</h2>
+      <div id="news-list"></div>
+      <button id="news-close">닫기</button>
+    </div>
   </div>
   <div id="touch">
     <button data-k="r">탄창<br>빼기</button>
@@ -28,6 +37,6 @@
     <button data-k="q">점검</button>
     <button data-k="fire" class="fire">쏘기</button>
   </div>
-  <script type="module" src="/src/main.ts"></script>
+  <script type="module" src="/src/client/main.ts"></script>
 </body>
 </html>

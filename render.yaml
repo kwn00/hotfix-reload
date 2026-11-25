@@ -1,0 +1,33 @@
+# Render Blueprint: 게임 화면 + 실시간 게임 서버를 웹 서비스 하나로 배포한다.
+# 사용법: Render 대시보드 → New → Blueprint → 이 저장소 선택 → Apply.
+# 이후 main 브랜치에 푸시할 때마다 자동으로 다시 배포된다 (배포 순간 진행 중인 판은 끊긴다).
+services:
+  - type: web
+    name: hotfix-reload
+    runtime: node
+    # 무료: 15분 동안 접속이 없으면 잠들고, 다음 접속 때 깨는 데 약 1분.
+    plan: free
+    # 한국에서 가장 가까운 Render 리전. 서비스를 만든 뒤에는 바꿀 수 없다.
+    region: singapore
+    branch: main
+    # 화면 빌드에 Vite(개발 의존성)가 필요하므로 dev 의존성까지 설치한다.
+    buildCommand: npm ci --include=dev && npm run build
+    # npm 을 거치지 않고 node 를 직접 띄워 종료 신호(SIGTERM)를 서버가 직접 받게 한다.
+    startCommand: NODE_ENV=production exec node --import tsx server/index.ts
+    healthCheckPath: /healthz
+    autoDeployTrigger: commit
+    # 게임에 들어가지 않는 파일만 바뀐 커밋은 다시 배포하지 않는다 (배포하면 진행 중인 판이 끊긴다).
+    buildFilter:
+      ignoredPaths:
+        - "**/*.md"
+        - "docs/**"
+        - "**/*.test.ts"
+        - ".github/**"
+        - ".claude/**"
+        - ".gitignore"
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Render 앞단(Cloudflare)이 덮어쓰는 단일 값 헤더로 클라이언트 IP 를 읽는다 (X-Forwarded-For 는 위조 가능).
+      - key: CLIENT_IP_HEADER
+        value: cf-connecting-ip
