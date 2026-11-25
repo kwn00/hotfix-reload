@@ -7,6 +7,7 @@ import { initNews } from './news.ts';
 import { Scene3D } from './scene.ts';
 import { GunRig } from './rig.ts';
 import { Guide } from './guide.ts';
+import { keyName, PREVENT } from './keys.ts';
 
 const $ = (id: string) => document.getElementById(id)!;
 const cv = $('c') as HTMLCanvasElement;
@@ -75,23 +76,25 @@ startBtn.addEventListener('click', async () => {
 const held = new Set<string>();
 const mouse = { x: innerWidth / 2, y: innerHeight / 2 };
 const once = { fire: false, melee: false, jump: false, interact: false, act: null as Action | null };
-const KEY_ACT: Record<string, Action> = { r: 'eject', f: 'insert', ' ': 'rack', g: 'stow', '1': 'grab1', '2': 'grab2', '3': 'grab3', '4': 'grab4' };
+const KEY_ACT: Record<string, Action> = { eject: 'eject', insert: 'insert', rack: 'rack', stow: 'stow', grab1: 'grab1', grab2: 'grab2', grab3: 'grab3', grab4: 'grab4' };
 
 function press(k: string) {
-  if (k === 'w' || k === 'arrowup') once.jump = true;
-  else if (k === 'e') once.interact = true;
-  else if (k === 'v') once.melee = true;
+  if (k === 'jump') once.jump = true;
+  else if (k === 'interact') once.interact = true;
+  else if (k === 'melee') once.melee = true;
+  else if (k === 'guide') guide.toggle();
   else if (KEY_ACT[k]) once.act = KEY_ACT[k];
 }
+// held 에는 게임의 이름(left · crouch · slowmo …)을 담는다. 키는 눌린 자리(e.code)로 읽는다 (keys.ts)
 addEventListener('keydown', e => {
   if (!playing) return;
-  const k = e.key.toLowerCase();
-  if ([' ', 'tab', 'shift', 'arrowup', 'arrowdown', '/'].includes(k)) e.preventDefault();
-  if (k === '/' && !e.repeat) { guide.toggle(); return; }
+  const k = keyName(e.code);
+  if (PREVENT.has(e.code)) e.preventDefault();
+  if (!k) return;
   if (!held.has(k) && !e.repeat) press(k);
   held.add(k);
 });
-addEventListener('keyup', e => held.delete(e.key.toLowerCase()));
+addEventListener('keyup', e => { const k = keyName(e.code); if (k) held.delete(k); });
 addEventListener('blur', () => held.clear());
 const crossEl = $('crosshair');
 addEventListener('mousemove', e => {
@@ -143,15 +146,15 @@ let lastDrawn: SnapMsg | null = null;
 function frame(now: number) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (playing && snap && room) {
-    const right = held.has('d') || held.has('arrowright');
-    const left = held.has('a') || held.has('arrowleft');
+    const right = held.has('right');
+    const left = held.has('left');
     const aim = currentAim();
     if (now - lastSend >= 33 || once.fire || once.act || once.melee || once.jump || once.interact) {
       const msg: ClientMsg = {
         t: 'in', mx: (right ? 1 : 0) - (left ? 1 : 0), aim,
-        jump: once.jump, crouch: held.has('s') || held.has('arrowdown'),
+        jump: once.jump, crouch: held.has('crouch'),
         fire: once.fire, melee: once.melee, act: once.act, interact: once.interact,
-        slowmo: held.has('shift'), check: held.has('q'),
+        slowmo: held.has('slowmo'), check: held.has('check'),
       };
       net.send(msg);
       once.fire = once.melee = once.jump = once.interact = false; once.act = null; lastSend = now;
