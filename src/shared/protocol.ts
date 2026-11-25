@@ -7,7 +7,7 @@ import { State, Action, ACTION_LIST, Alarm, EnemyKind, CHECK_TIME, visible, clea
 import { ROOMS } from './level.ts';
 import { GunEvent } from './gun.ts';
 
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 export const MAX_MSG_BYTES = 256;
 
 export type ClientMsg =
@@ -50,6 +50,8 @@ export interface SnapMsg {
   p: { x: number; y: number; vy: number; ground: boolean; crouch: boolean; face: 1 | -1; hp: number; hurt: boolean; melee: boolean };
   /** 서버가 처리한 마지막 입력 번호 */
   ack: number;
+  /** 실제로 처리한 마지막 장전 동작의 입력 번호 (총이 바빠 기다린 동작은 처리된 뒤에 올라간다) */
+  actAck: number;
   aim: number; dead: boolean; slowmo: boolean; meter: number;
   enemies: EnemyView[];
   bullets: { id: number; x: number; y: number; enemy: boolean }[];
@@ -74,12 +76,12 @@ export function roomMsg(s: State): RoomMsg {
 const r1 = (v: number) => Math.round(v * 10) / 10;
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
-export function snapshot(s: State, ack = 0): SnapMsg {
+export function snapshot(s: State, ack = 0, actAck = 0): SnapMsg {
   const g = s.gun, p = s.p, eye = pEye(p);
   const sees = (x: number, y: number) => clear(s.map, eye.x, eye.y, x, y);
   return {
     t: 'snap',
-    ack,
+    ack, actAck,
     p: { x: p.x, y: p.y, vy: p.vy, ground: p.onGround, crouch: p.crouch, face: p.face, hp: p.hp, hurt: p.invuln > 0, melee: p.melee > 0 },
     aim: r2(s.aim), dead: s.dead > 0, slowmo: s.slowmo, meter: r2(s.meter),
     enemies: s.enemies.filter(e => e.hp > 0 && visible(s, e)).map(e => ({

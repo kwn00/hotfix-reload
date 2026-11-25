@@ -9,6 +9,7 @@ import { GunRig } from './rig.ts';
 import { Guide } from './guide.ts';
 import { keyName, PREVENT } from './keys.ts';
 import { Predictor } from './predict.ts';
+import { GunPredictor, type LocalEvent } from './gunpredict.ts';
 
 const $ = (id: string) => document.getElementById(id)!;
 const cv = $('c') as HTMLCanvasElement;
@@ -19,9 +20,32 @@ initNews();
 const scene = new Scene3D(cv);
 const rigCv = $('rig') as HTMLCanvasElement;
 const rig = new GunRig(rigCv);
+const letterbox = $('letterbox');
+letterbox.style.visibility = 'hidden';
 rigCv.style.visibility = "hidden";
 const net = new Net();
 const predictor = new Predictor();
+const gunPred = new GunPredictor();
+/** 화면에서 미리 보여 준 장전 사건 (서버가 같은 사건을 보내오면 다시 재생하지 않는다) */
+let shownLocal: LocalEvent[] = [];
+/** 이번 프레임에 그릴 미리 보여 주는 사건 */
+let localNow: string[] = [];
+
+/**
+ * 서버 사건에서 화면이 이미 보여 준 장전을 뺀다.
+ * 슬라이드를 당겼을 때 무엇이 튀어나왔는지(rack-waste · unjam)는 숨긴 정보라 서버 답으로만 안다: 그것만 따로 보여 준다
+ */
+function mergeServerEvents(events: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const e of events) {
+    const key = e === 'rack-waste' || e === 'unjam' ? 'rack' : e;
+    const i = shownLocal.indexOf(key as LocalEvent);
+    if (i < 0) { out.push(e); continue; }
+    shownLocal.splice(i, 1);
+    if (e === 'rack-waste' || e === 'unjam') out.push(`${e}-fx`);
+  }
+  return out;
+}
 let room: RoomMsg | null = null;
 let snap: SnapMsg | null = null, prev: SnapMsg | null = null;
 let snapAt = 0, playing = false;
@@ -35,7 +59,7 @@ showBest();
 const slotBtns = Array.from(document.querySelectorAll<HTMLButtonElement>('#slots button'));
 function resize() {
   scene.resize(cv.clientWidth, cv.clientHeight);
-  rig.resize(rigCv.clientWidth, rigCv.clientHeight);
+  rig.resize(rigCv.clientWidth, rigCv.clientHeight, letterbox.clientHeight);
   slotBtns.forEach((b, i) => { const p = i < 4 ? rig.layout.slots[i] : rig.layout.grip; b.style.left = `${p.x}px`; });
 }
 addEventListener('resize', resize); resize();
@@ -45,13 +69,15 @@ net.onMsg = (m: ServerMsg) => {
   else if (m.t === 'snap') {
     prev = snap; snap = m; snapAt = performance.now();
     predictor.onSnap(m);
-    for (const e of m.events) sfx(e);
+    gunPred.onSnap(m, performance.now());
+    serverEvents = mergeServerEvents(m.events);
+    for (const e of serverEvents) sfx(e);
     if (m.won) finish();
   }
 };
 net.onClose = () => { if (playing) stop(); statusEl.textContent = '서버와 연결이 끊겼어요. 다시 시작해 주세요.'; };
 
-function stop() { document.body.classList.remove('playing'); playing = false; room = snap = prev = null; hud.classList.add('hidden'); rigCv.style.visibility = 'hidden'; title.classList.remove('hidden'); }
+function stop() { document.body.classList.remove('playing'); playing = false; room = snap = prev = null; hud.classList.add('hidden'); rigCv.style.visibility = 'hidden'; letterbox.style.visibility = 'hidden'; title.classList.remove('hidden'); }
 let finishing = false;
 function finish() {
   if (finishing || !snap) return;
@@ -63,8 +89,8 @@ startBtn.addEventListener('click', async () => {
   startBtn.disabled = true; statusEl.textContent = '서버에 연결하는 중… (잠든 서버는 깨는 데 1분쯤 걸려요)';
   try {
     if (!net.open) await net.connect();
-    net.send({ t: 'start' }); seq = 0; acc = 0; predictor.reset(); playing = true; document.body.classList.add('playing'); rig.reset(); guide.reset();
-    title.classList.add('hidden'); hud.classList.remove('hidden'); rigCv.style.visibility = 'visible'; resize();
+    net.send({ t: 'start' }); seq = 0; acc = 0; predictor.reset(); gunPred.reset(); shownLocal = []; localNow = []; playing = true; document.body.classList.add('playing'); rig.reset(); guide.reset();
+    title.classList.add('hidden'); hud.classList.remove('hidden'); rigCv.style.visibility = 'visible'; letterbox.style.visibility = 'visible'; resize();
     statusEl.textContent = '';
   } catch { statusEl.textContent = '서버에 연결하지 못했어요. 잠시 뒤 다시 눌러 주세요.'; }
   startBtn.disabled = false;
@@ -103,6 +129,7 @@ cv.addEventListener('mousedown', e => {
   if (!playing) return;
   if (e.button === 2) { once.melee = true; return; }
   once.fire = true;
+  rig.trigger(); sfx('trigger');
   // 누르는 순간 조준점이 반응한다 (탄이 나갔는지는 서버가 정한다)
   crossEl.classList.add('fire'); setTimeout(() => crossEl.classList.remove('fire'), 90);
 });
@@ -148,6 +175,7 @@ function hudUpdate(s: SnapMsg) {
 // ---------- 루프 ----------
 let last = performance.now(), acc = 0, seq = 0;
 let lastDrawn: SnapMsg | null = null;
+let serverEvents: string[] = [];
 function frame(now: number) {
   const raw = (now - last) / 1000; last = now;
   const dt = Math.min(0.05, raw);
@@ -167,21 +195,32 @@ function frame(now: number) {
       };
       net.send(msg);
       predictor.step(msg);
+      // 장전은 보이는 정보만으로 결과가 정해진다: 바로 적용하고 보여 준다
+      if (msg.act) {
+        const ev = gunPred.press(msg.seq, msg.act, now);
+        if (ev) { shownLocal.push(ev); localNow.push(ev); sfx(ev); if (shownLocal.length > 8) shownLocal.shift(); }
+      }
       once.fire = once.melee = once.jump = once.interact = false; once.act = null;
     }
     const me = predictor.render(acc / TICK, dt);
     // 개발 모드에서만: 반응 속도를 재는 시험이 그려지는 내 위치를 읽는다 (운영 빌드에는 들어가지 않는다)
-    if (import.meta.env.DEV) (window as unknown as { __me: unknown }).__me = me ?? snap.p;
+
     const aim = currentAim(me);
     // 사건(쏘기 · 화염 · 불꽃)은 스냅샷 하나에 한 번만 (화면 주사율과 상관없이)
     const fresh = snap !== lastDrawn; lastDrawn = snap;
+    gunPred.tick(Math.min(raw, 0.5)); // 실제 흐른 시간 (프레임이 끊겨도 서버 시계와 맞게)
+    const events = [...(fresh ? serverEvents : []), ...localNow]; localNow = [];
+    // 총 리그 · 칸 · 안내는 미리 적용한 장전 상태로 그린다
+    const view: SnapMsg = { ...snap, gun: gunPred.get() ?? snap.gun };
+    // 개발 모드에서만: 반응 속도를 재는 시험이 그려지는 내 위치 · 총 상태를 읽는다 (운영 빌드에는 들어가지 않는다)
+    if (import.meta.env.DEV) Object.assign(window, { __me: me ?? snap.p, __gun: view.gun, __snap: snap });
     scene.draw(prev, snap, Math.min(1, (now - snapAt) / 33), aim, dt, now, fresh, me);
-    hudUpdate(snap);
-    rig.update(snap, aim, dt, now, fresh);
-    guide.update(snap, fresh);
+    hudUpdate(view);
+    rig.update(view, aim, dt, now, events);
+    guide.update(view, events);
     // 조준점: 쏘면 잠깐 벌어지고, 총이 바쁘면(장전 · 반동) 흐려진다
     if (fresh && snap.events.some(e => e === 'fire' || e === 'jam')) { crossEl.classList.add('fire'); setTimeout(() => crossEl.classList.remove('fire'), 90); }
-    crossEl.classList.toggle('dim', snap.gun.busy > 0.15);
+    crossEl.classList.toggle('dim', view.gun.busy > 0.15);
   }
   requestAnimationFrame(frame);
 }

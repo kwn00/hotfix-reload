@@ -23,10 +23,11 @@ button:disabled { opacity: .6; }
 .news-box button { margin-top: 8px; width: 100%; }
 
 /* HUD */
-/* 아래 레터박스: 탄창 칸과 총 리그는 이 띠 안에만 그린다 (게임 화면을 가리지 않게) */
+/* 아래 레터박스: 검은 띠는 따로 그리고, 총 리그는 그 위에 투명하게 겹친다.
+   총 리그는 언제나 맨 위 (총을 위로 들면 맵 위로 솟아도 가려지지 않는다). 띠 위쪽의 투명한 부분으로는 맵이 그대로 보인다 */
 :root { --band: clamp(140px, 25vh, 250px); }
-#rig { position: fixed; left: 0; right: 0; bottom: 0; width: 100vw; height: var(--band); pointer-events: none; z-index: 1;
-  background: linear-gradient(#07070b, #0b0b12); border-top: 1px solid #1e1e2e; }
+#letterbox { position: fixed; left: 0; right: 0; bottom: 0; height: var(--band); background: linear-gradient(#07070b, #0b0b12); border-top: 1px solid #1e1e2e; pointer-events: none; z-index: 1; }
+#rig { position: fixed; left: 0; right: 0; bottom: 0; width: 100vw; height: min(100vh, calc(var(--band) * 1.7)); pointer-events: none; z-index: 5; }
 #hud { position: fixed; inset: 0; pointer-events: none; font-size: 13px; text-shadow: 0 1px 2px #000; z-index: 2; }
 #hud .tl { position: absolute; left: 14px; top: 8px; }
 #hud .big { font-size: clamp(20px, 3.4vw, 34px); font-weight: bold; letter-spacing: -1px; color: #eff1f5; line-height: 1.15; }

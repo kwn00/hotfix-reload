@@ -21,6 +21,16 @@ export interface ReleaseNote {
 /** 최신 버전이 맨 위 */
 export const RELEASES: readonly ReleaseNote[] = [
   {
+    version: '0.3.5',
+    date: '2026-11-25',
+    title: '장전이 바로 반응해요',
+    items: [
+      '탄창 빼기 · 쥐기 · 꽂기 · 슬라이드가 키를 누르는 즉시 움직여요.',
+      '클릭하는 순간 방아쇠가 당겨지고 딸깍 소리가 나요.',
+      '총을 위로 들어도 잘리지 않고, 언제나 맨 위에 보여요.',
+    ],
+  },
+  {
     version: '0.3.4',
     date: '2026-11-25',
     title: '키를 누르면 바로 움직여요',
