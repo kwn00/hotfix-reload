@@ -294,7 +294,7 @@ export class Scene3D {
       let m = this.bullets.get(b.id);
       if (!m) { m = new THREE.Mesh(this.bulletGeo, b.enemy ? this.enemyBulletMat : this.bulletMat); this.bullets.set(b.id, m); this.dyn.add(m); }
       m.rotation.z = Math.atan2(-b.vy, b.vx);
-      m.scale.set(b.enemy ? 0.7 : 1.4, b.enemy ? 2 : 1, b.enemy ? 2 : 1); // 내 탄: 얇고 긴 예광탄 줄기, 적 탄: 짧고 조금 굵게 (피할 수 있게 잘 보이도록)
+      m.scale.set(b.enemy ? 0.7 : 0.55, b.enemy ? 2 : 0.6, b.enemy ? 2 : 0.6); // 내 탄: 아주 얇고 짧은 줄기(약 10px), 적 탄: 짧고 조금 굵게 (피할 수 있게 잘 보이도록)
       m.position.set(b.x + b.vx * ahead, -(b.y + b.vy * ahead), 4);
     }
     for (const [id, m] of this.bullets) if (!seenB.has(id)) { this.dyn.remove(m); this.bullets.delete(id); }
