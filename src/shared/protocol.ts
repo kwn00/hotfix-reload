@@ -3,18 +3,18 @@
 // - 벽 · 책상 너머의 적과 그 탄은 보내지 않는다
 // - 탄 수(약실 · 탄창 · 주머니, 주운 탄창의 탄 수)는 점검(git status)을 충분히 들고 있을 때만 보낸다
 // - 방의 적 배치는 보내지 않는다 (지형만 보낸다)
-import { State, Action, EnemyKind, CHECK_TIME, visible, clear, pEye, score } from './game.ts';
+import { State, Action, ACTION_LIST, Alarm, EnemyKind, CHECK_TIME, visible, clear, pEye, score } from './game.ts';
 import { ROOMS } from './level.ts';
 import { GunEvent } from './gun.ts';
 
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 export const MAX_MSG_BYTES = 256;
 
 export type ClientMsg =
   | { t: 'start' }
   | { t: 'in'; mx: number; aim: number; jump: boolean; crouch: boolean; fire: boolean; melee: boolean; act: Action | null; slowmo: boolean; check: boolean; interact: boolean };
 
-const ACTS: readonly Action[] = ['eject', 'insert', 'rack'];
+const ACTS = ACTION_LIST;
 const num = (v: unknown, lo: number, hi: number): number | null =>
   typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : null;
 
@@ -40,7 +40,7 @@ export interface RoomMsg {
   tiles: string;   // 0 빈칸, 1 벽, 2 책상, 3 문
   decor: { kind: 'lamp' | 'rack' | 'window'; x: number; y: number }[];
 }
-export interface AmmoView { chamber: number; mag: number | null; pockets: number[] }
+export interface AmmoView { chamber: number; mag: number | null; slots: (number | null)[]; grip: number | null }
 export interface EnemyView { id: number; kind: EnemyKind; x: number; y: number; dir: 1 | -1; aim: number | null; grabbed: boolean }
 export interface SnapMsg {
   t: 'snap';
@@ -51,7 +51,9 @@ export interface SnapMsg {
   mags: { id: number; x: number; y: number }[];
   flashes: { x: number; y: number; enemy: boolean }[];
   impacts: { x: number; y: number }[];
-  gun: { magIn: boolean; pockets: number; busy: number };
+  /** 총의 보이는 상태: 탄창이 꽂혔는지, 칸마다 탄창이 있는지, 손에 쥐었는지 (탄 수는 없다) */
+  gun: { magIn: boolean; slots: boolean[]; grip: boolean; busy: number };
+  alarm: Alarm;
   ammo: AmmoView | null;
   checking: number;
   events: GunEvent[]; log: string[];
@@ -82,8 +84,9 @@ export function snapshot(s: State): SnapMsg {
     mags: s.mags.filter(m => sees(m.x, m.y - 6)).map(m => ({ id: m.id, x: m.x, y: m.y })),
     flashes: s.flashes.filter(f => !f.enemy || sees(f.x, f.y)).map(f => ({ x: r1(f.x), y: r1(f.y), enemy: f.enemy })),
     impacts: s.impacts.filter(i => sees(i.x, i.y)).map(i => ({ x: r1(i.x), y: r1(i.y) })),
-    gun: { magIn: g.mag !== null, pockets: g.pockets.length, busy: r2(g.busy) },
-    ammo: s.checkHold >= CHECK_TIME ? { chamber: g.chamber ? 1 : 0, mag: g.mag, pockets: [...g.pockets] } : null,
+    gun: { magIn: g.mag !== null, slots: g.slots.map(v => v !== null), grip: g.grip !== null, busy: r2(g.busy) },
+    alarm: s.alarm,
+    ammo: s.checkHold >= CHECK_TIME ? { chamber: g.chamber ? 1 : 0, mag: g.mag, slots: [...g.slots], grip: g.grip } : null,
     checking: r2(Math.min(1, s.checkHold / CHECK_TIME)),
     // 적 총소리는 벽 너머에서도 들린다 (소리일 뿐 위치는 아니다)
     events: s.events, log: s.log.map(l => l.text),

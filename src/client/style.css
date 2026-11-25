@@ -21,30 +21,41 @@ button:disabled { opacity: .6; }
 .news-box button { margin-top: 8px; width: 100%; }
 
 /* HUD */
-#hud { position: fixed; inset: 0; pointer-events: none; font-size: 13px; text-shadow: 0 1px 2px #000; }
-#hud .tl { position: absolute; left: 12px; top: 10px; background: var(--panel); padding: 8px 10px; border-radius: 6px; min-width: 210px; max-width: calc(100vw - 150px); }
-#hud .tr { position: absolute; right: 12px; top: 10px; background: var(--panel); padding: 8px 10px; border-radius: 6px; width: 150px; text-align: right; }
-#hp { color: var(--danger); font-size: 16px; letter-spacing: 2px; }
+#rig { position: fixed; left: 0; right: 0; bottom: 0; width: 100vw; height: clamp(150px, 34vh, 320px); pointer-events: none; z-index: 1; }
+#hud { position: fixed; inset: 0; pointer-events: none; font-size: 13px; text-shadow: 0 1px 2px #000; z-index: 2; }
+#hud .tl { position: absolute; left: 14px; top: 8px; }
+#hud .big { font-size: clamp(20px, 3.4vw, 34px); font-weight: bold; letter-spacing: -1px; color: #eff1f5; line-height: 1.15; }
+#hud .big.focus { color: #89dceb; padding-left: 1.6em; }
+#hud .tr { position: absolute; right: 14px; top: 8px; text-align: right; }
+.small { font-size: 12px; }
+.alarm { font-size: clamp(18px, 3vw, 28px); font-weight: bold; border-bottom: 2px solid currentColor; display: inline-block; padding: 0 4px; }
+.alarm.calm { color: #a6e3a1; } .alarm.alert { color: #f9e2af; } .alarm.alarmed { color: #f38ba8; animation: blink .6s steps(2) infinite; }
+@keyframes blink { 50% { opacity: .55; } }
 .dim { color: var(--dim); }
-.ok { color: var(--accent); white-space: pre-wrap; word-break: keep-all; }
-.bar { height: 4px; background: #313244; border-radius: 2px; margin: 4px 0; overflow: hidden; }
-.bar > div { height: 100%; background: var(--warn); width: 0; }
-.meter > div { background: #89dceb; }
-#log { position: absolute; left: 12px; bottom: 12px; display: flex; flex-direction: column; gap: 2px; max-width: calc(100vw - 24px); }
+.term { position: absolute; left: 14px; bottom: calc(clamp(150px, 34vh, 320px) + 4px); color: var(--accent); white-space: pre; background: rgba(17,17,27,.75); padding: 4px 8px; border-radius: 4px; }
+.term:empty { display: none; }
+#log { position: absolute; left: 14px; bottom: calc(clamp(150px, 34vh, 320px) + 64px); display: flex; flex-direction: column; gap: 2px; max-width: calc(100vw - 28px); }
 #log div { background: var(--panel); padding: 2px 6px; border-radius: 4px; width: fit-content; }
-#center { position: absolute; left: 0; right: 0; top: 40%; text-align: center; font-size: clamp(18px, 4vw, 28px); font-weight: bold; white-space: pre-line; }
+#center { position: absolute; left: 0; right: 0; top: 36%; text-align: center; font-size: clamp(18px, 4vw, 28px); font-weight: bold; white-space: pre-line; }
 #center.bad { color: var(--danger); } #center.good { color: var(--accent); }
 #slowfx { position: absolute; inset: 0; box-shadow: inset 0 0 120px 30px rgba(137,220,235,.0); transition: box-shadow .25s; }
 #slowfx.on { box-shadow: inset 0 0 140px 40px rgba(137,220,235,.28); }
-
+#slots { position: absolute; left: 0; right: 0; bottom: 0; height: 22px; }
+#slots button { position: absolute; bottom: 2px; background: none; border: none; border-bottom: 2px solid #6c7086; border-radius: 0; color: #bac2de; font-size: 14px; padding: 0 10px; pointer-events: auto; transform: translateX(-50%); }
+#slots button.empty { color: #585b70; border-color: #45475a; }
 /* 터치 */
-#touch { position: fixed; inset: auto 0 0 0; height: 0; }
+#touch { position: fixed; inset: auto 0 0 0; height: 0; z-index: 3; }
 #touch .pad { position: fixed; bottom: 10px; display: grid; gap: 6px; }
 #touch .left { left: 8px; grid-template-columns: repeat(3, 42px); grid-template-areas: ". up ." "left down right"; }
 #touch .left [data-k=up] { grid-area: up; } #touch .left [data-k=left] { grid-area: left; } #touch .left [data-k=right] { grid-area: right; } #touch .left [data-k=down] { grid-area: down; }
-#touch .right { right: 8px; grid-template-columns: repeat(4, 46px); }
+#touch .right { right: 8px; grid-template-columns: repeat(5, 44px); }
 #touch button { height: 44px; padding: 0; font-size: 11px; opacity: .8; line-height: 1.1; }
 #touch .fire { background: #c9516f; }
-@media (pointer: coarse) { #hud #log { bottom: 130px; } }
-#rotate { display: none; position: absolute; left: 0; right: 0; top: 96px; text-align: center; color: var(--warn); font-size: 12px; }
+@media (pointer: coarse) {
+  #rig { bottom: 104px; height: clamp(120px, 26vh, 220px); }
+  #slots { bottom: 104px; }
+  .term { bottom: calc(104px + clamp(120px, 26vh, 220px) + 4px); }
+  #log { bottom: calc(104px + clamp(120px, 26vh, 220px) + 64px); }
+}
+#rotate { display: none; position: absolute; left: 0; right: 0; top: 110px; text-align: center; color: var(--warn); font-size: 12px; }
 @media (pointer: coarse) and (orientation: portrait) { #rotate { display: block; } }

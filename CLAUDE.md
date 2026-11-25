@@ -38,5 +38,5 @@ npm run build       # 화면 빌드
 
 - `src/shared` — 서버와 화면이 함께 쓰는 것: 총(`gun.ts`), 방 지도(`level.ts`), 시뮬레이션(`game.ts`), 통신 규격과 스냅샷(`protocol.ts`), 버전과 새 소식(`releases.ts`)
 - `server` — 진입점 · 정적 파일 · WebSocket(`index.ts`), 판 하나(`session.ts`), 연결 제한(`security.ts`)
-- `src/client` — 입력 · HUD(`main.ts`), three.js 화면(`scene.ts`), 픽셀 스프라이트(`art.ts`), 연결(`net.ts`), 새 소식(`news.ts`), 효과음(`sound.ts`), `index.html`
+- `src/client` — 입력 · HUD(`main.ts`), three.js 화면(`scene.ts`), 아래의 총 리그(`rig.ts`), 픽셀 스프라이트(`art.ts`), 연결(`net.ts`), 새 소식(`news.ts`), 효과음(`sound.ts`), `index.html`
 - `docs/releases/` — 버전별 GitHub 릴리즈 본문

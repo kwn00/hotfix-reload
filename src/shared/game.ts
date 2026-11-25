@@ -1,6 +1,6 @@
 // 사이드뷰 시뮬레이션. 서버만 이것을 돌린다 (화면은 결과만 받는다).
 // 좌표: x 오른쪽, y 아래. 사람의 (x, y) 는 발 가운데.
-import { Gun, GunEvent, newGun, cloneGun, tick as gunTick, fire, eject, insert, rack, pickupMag } from './gun.ts';
+import { Gun, GunEvent, newGun, cloneGun, tick as gunTick, fire, eject, insert, rack, grab, stow, pickupMag } from './gun.ts';
 import { ROOMS, TILE, parseRoom, Parsed, EnemyKind } from './level.ts';
 
 export { TILE };
@@ -30,6 +30,7 @@ export interface Enemy {
   aimT: number;         // 조준 중 남은 시간 (0 보다 크면 조준선이 보인다)
   aimAng: number;
   cd: number; burst: number; burstT: number; sees: boolean;
+  heard: number;        // 총소리를 들은 뒤 남은 경계 시간
 }
 export interface Bullet { id: number; x: number; y: number; vx: number; vy: number; life: number; enemy: boolean }
 export interface Mag { id: number; x: number; y: number; rounds: number }
@@ -45,6 +46,7 @@ export interface State {
   kills: number; deaths: number; time: number; roomTime: number;
   dead: number;          // 쓰러진 뒤 다시 시작하기까지 남은 시간 (0 = 살아 있음)
   won: boolean;
+  alarm: Alarm;          // 경계 상태: 적이 나를 보고 있으면 alarmed, 소리를 들었으면 alert
   checkHold: number;
   events: GunEvent[]; log: { text: string; t: number }[];
   nextId: number; rng: () => number;
@@ -53,7 +55,9 @@ export interface State {
   impacts: { x: number; y: number }[];
 }
 
-export type Action = 'eject' | 'insert' | 'rack';
+export type Action = 'eject' | 'insert' | 'rack' | 'stow' | 'grab1' | 'grab2' | 'grab3' | 'grab4';
+export const ACTION_LIST: readonly Action[] = ['eject', 'insert', 'rack', 'stow', 'grab1', 'grab2', 'grab3', 'grab4'];
+export type Alarm = 'calm' | 'alert' | 'alarmed';
 /** 클라이언트가 보내는 "의도". 서버는 이것만 받는다. */
 export interface Input {
   mx: number;            // -1 ~ 1 좌우
@@ -124,16 +128,16 @@ function resetRoom(s: State) {
   s.p = { x: m.start.x, y: m.start.y, vy: 0, onGround: true, crouch: false, face: 1, hp: PLAYER.hp, invuln: 0, melee: 0, meleeTarget: 0 };
   s.gun = cloneGun(s.checkpoint);
   s.enemies = m.enemies.map(e => ({ id: s.nextId++, kind: e.kind, x: e.x, y: e.y, vy: 0, hp: ENEMY[e.kind].hp, dir: -1 as const,
-    alert: 0, aimT: 0, aimAng: Math.PI, cd: 0.5 + s.rng(), burst: 0, burstT: 0, sees: false }));
+    alert: 0, aimT: 0, aimAng: Math.PI, cd: 0.5 + s.rng(), burst: 0, burstT: 0, sees: false, heard: 0 }));
   s.mags = m.mags.map(g => ({ id: s.nextId++, x: g.x, y: g.y, rounds: 2 + Math.floor(s.rng() * 6) }));
-  s.bullets = []; s.dead = 0; s.roomTime = 0; s.slowmo = false; s.meter = Math.max(s.meter, 0.5);
+  s.bullets = []; s.dead = 0; s.alarm = 'calm'; s.roomTime = 0; s.slowmo = false; s.meter = Math.max(s.meter, 0.5);
 }
 
 export function newGame(seed: number): State {
   const s = {
     room: 0, map: parseRoom(ROOMS[0]), p: null as unknown as Player, aim: 0,
     gun: newGun(), checkpoint: newGun(), enemies: [], bullets: [], mags: [],
-    slowmo: false, meter: 1, kills: 0, deaths: 0, time: 0, roomTime: 0, dead: 0, won: false, checkHold: 0,
+    slowmo: false, meter: 1, kills: 0, deaths: 0, time: 0, roomTime: 0, dead: 0, won: false, alarm: 'calm', checkHold: 0,
     events: [], log: [], nextId: 1, rng: mulberry32(seed), flashes: [], impacts: [],
   } as State;
   enterRoom(s, 0);
@@ -144,12 +148,16 @@ export function say(s: State, text: string) { s.log.push({ text, t: 3 }); if (s.
 
 const MSG: Partial<Record<GunEvent, string>> = {
   dry: '찰칵. 약실이 비었어요', jam: '총이 걸렸어요! 슬라이드를 당기세요 (Space)', jammed: '걸렸어요! Space',
-  'no-mag': '꽂을 탄창이 없어요', 'rack-waste': '한 발이 튕겨 나갔어요',
+  'no-mag': '탄창이 없어요', 'rack-waste': '한 발이 튕겨 나갔어요', 'hand-full': '손에 이미 탄창이 있어요 (G 로 넣기)',
+  'empty-slot': '빈 칸이에요', 'no-slot': '넣을 칸이 없어요',
 };
 function ev(s: State, e: GunEvent) { if (e === 'busy') return; s.events.push(e); const m = MSG[e]; if (m) say(s, m); }
 
 // ---------- 한 틱 ----------
-const ACTIONS: Record<Action, (g: Gun) => GunEvent> = { eject, insert, rack };
+const ACTIONS: Record<Action, (g: Gun) => GunEvent> = {
+  eject, insert, rack, stow,
+  grab1: g => grab(g, 0), grab2: g => grab(g, 1), grab3: g => grab(g, 2), grab4: g => grab(g, 3),
+};
 
 export function step(s: State, inp: Input, dt: number): void {
   s.events = []; s.flashes = []; s.impacts = [];
@@ -193,9 +201,20 @@ export function step(s: State, inp: Input, dt: number): void {
     p.onGround = physics(s.map, p, Math.max(-1, Math.min(1, inp.mx)) * speed * pdt, PLAYER.w, pHeight(p), pdt);
 
     if (inp.act) ev(s, ACTIONS[inp.act](s.gun));
+    // 빠진 탄창은 발밑에 떨어진다 (남은 탄 그대로. 다시 주울 수 있다)
+    if (s.gun.dropped !== null) { s.mags.push({ id: s.nextId++, x: p.x + p.face * 6, y: p.y, rounds: s.gun.dropped }); s.gun.dropped = null; }
     if (inp.fire) shoot(s);
     if (inp.melee && s.gun.busy <= 0) tryMelee(s);
 
+    // E: 바닥의 탄창 줍기 (가장 가까운 것), 없으면 문
+    if (inp.interact && !touchingDoor(s)) {
+      let best: Mag | null = null, bd = 30;
+      for (const g of s.mags) { const d = Math.abs(g.x - p.x); if (d < bd && Math.abs(g.y - p.y) < 24) { bd = d; best = g; } }
+      if (best) {
+        if (pickupMag(s.gun, best.rounds)) { s.mags = s.mags.filter(g => g !== best); s.events.push('pickup'); say(s, '탄창을 주웠어요 (몇 발인지는 몰라요)'); }
+        else ev(s, 'no-slot');
+      }
+    }
     // 문
     if (inp.interact && touchingDoor(s)) {
       s.events.push('door');
@@ -205,11 +224,6 @@ export function step(s: State, inp: Input, dt: number): void {
     }
   }
 
-  // 탄창 줍기
-  for (const g of s.mags) if (g.rounds >= 0 && Math.abs(g.x - p.x) < 18 && Math.abs(g.y - p.y) < 20) {
-    if (pickupMag(s.gun, g.rounds)) { g.rounds = -1; s.events.push('pickup'); say(s, '탄창을 주웠어요 (몇 발인지는 몰라요)'); }
-  }
-  s.mags = s.mags.filter(g => g.rounds >= 0);
 
   // 탄
   for (const b of s.bullets) {
@@ -237,6 +251,7 @@ export function step(s: State, inp: Input, dt: number): void {
 
   for (const e of s.enemies) if (e.hp > 0) enemyThink(s, e, wdt);
   s.enemies = s.enemies.filter(e => e.hp > 0);
+  s.alarm = s.enemies.some(e => e.sees) ? 'alarmed' : s.enemies.some(e => e.heard > 0) ? 'alert' : 'calm';
 }
 
 function touchingDoor(s: State) {
@@ -264,7 +279,7 @@ export function shoot(s: State) {
   s.bullets.push({ id: s.nextId++, x: g.x + Math.cos(ang) * 14, y: g.y + Math.sin(ang) * 14, vx: Math.cos(ang) * PLAYER_BULLET, vy: Math.sin(ang) * PLAYER_BULLET, life: 1, enemy: false });
   s.flashes.push({ x: g.x + Math.cos(ang) * 16, y: g.y + Math.sin(ang) * 16, enemy: false });
   // 총소리를 들은 적은 바로 반응한다
-  for (const e of s.enemies) if (Math.abs(e.x - s.p.x) < 400) e.alert = Math.min(e.alert, 0.15);
+  for (const e of s.enemies) if (Math.abs(e.x - s.p.x) < 400) { e.alert = Math.min(e.alert, 0.15); e.heard = 6; }
 }
 
 function tryMelee(s: State) {
@@ -295,6 +310,7 @@ function kill(s: State, e: Enemy, melee: boolean) {
 function enemyThink(s: State, e: Enemy, dt: number) {
   const d = ENEMY[e.kind], p = s.p;
   e.cd = Math.max(0, e.cd - dt);
+  e.heard = Math.max(0, e.heard - dt);
   const c = eChest(e), target = pChest(p);
   const dist = Math.hypot(target.x - c.x, target.y - c.y);
   const sees = s.dead <= 0 && dist < d.range && clear(s.map, c.x, c.y - 8, target.x, target.y);

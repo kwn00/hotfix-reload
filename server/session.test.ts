@@ -18,6 +18,7 @@ test('쏘기 연타는 총의 동작 시간보다 빨라지지 않는다', () =>
   const s = new Session(m => { if (m.t === 'snap') fired += m.events.filter(e => e === 'fire' || e === 'jam').length; });
   s.handle({ t: 'start' });
   s.state!.enemies = [];
+  s.state!.rng = () => 0.99; // 걸리지 않게 (걸림은 따로 테스트한다)
   for (let i = 0; i < 30; i++) { s.handle({ t: 'in', ...base, aim: -1.5, fire: true }); s.tick(); }
   assert.ok(fired >= 4 && fired <= 8, `쏜 수 ${fired}`);
 });

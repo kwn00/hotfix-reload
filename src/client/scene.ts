@@ -338,7 +338,9 @@ export class Scene3D {
     const W = this.room.w * TILE;
     const narrow = this.camera.aspect < 1;
     const dist = (narrow ? 900 : 640) - 120 * this.slow;
-    const lookX = Math.max(160, Math.min(W - 160, px + Math.cos(aim) * 60));
+    // 방 바깥(빈 공간)이 보이지 않게 카메라를 방 안에 묶는다
+    const halfW = dist * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * this.camera.aspect * 0.92;
+    const lookX = W <= halfW * 2 ? W / 2 : Math.max(halfW, Math.min(W - halfW, px + Math.cos(aim) * 60));
     const lookY = -py + 115;
     const target = new THREE.Vector3(lookX + 40 * this.slow, lookY + 60 - 20 * this.slow, dist);
     if (this.camPos.lengthSq() === 0) { this.camPos.copy(target); this.camLook.set(lookX, lookY, 0); }

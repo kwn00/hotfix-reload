@@ -5,7 +5,7 @@ import { ROOMS, parseRoom } from './level.ts';
 
 const run = (s: ReturnType<typeof newGame>, inp = IDLE, n = 1) => { for (let i = 0; i < n; i++) step(s, inp, TICK); };
 const enemy = (s: ReturnType<typeof newGame>, over: Partial<Enemy>): Enemy =>
-  ({ id: 999, kind: 'bug', x: s.p.x + 200, y: s.p.y, vy: 0, hp: 1, dir: -1, alert: 0, aimT: 0, aimAng: Math.PI, cd: 99, burst: 0, burstT: 0, sees: false, ...over });
+  ({ id: 999, kind: 'bug', x: s.p.x + 200, y: s.p.y, vy: 0, hp: 1, dir: -1, alert: 0, aimT: 0, aimAng: Math.PI, cd: 99, burst: 0, burstT: 0, sees: false, heard: 0, ...over });
 
 test('모든 방: 시작 자리는 바닥 위, 문이 있고, 적은 땅 위에 서 있다', () => {
   for (const r of ROOMS) {
@@ -105,3 +105,24 @@ test('문에서 E 를 누르면 다음 방, 마지막 방이면 이긴다', () =
 });
 
 test('적 정의는 모두 있다', () => { for (const k of ['bug', 'npe', 'conflict', 'debt'] as const) assert.ok(ENEMY[k].hp > 0); });
+
+test('빠진 탄창은 바닥에 떨어지고, E 로 다시 줍는다', () => {
+  const s = newGame(1); s.enemies = []; s.mags = [];
+  run(s, { ...IDLE, act: 'eject' });
+  assert.equal(s.mags.length, 1);
+  assert.equal(s.gun.mag, null);
+  run(s, IDLE, 10);
+  assert.equal(s.mags.length, 1, '걸어가기만 해서는 줍지 않는다');
+  run(s, { ...IDLE, interact: true });
+  assert.equal(s.mags.length, 0);
+  assert.deepEqual(s.gun.slots, [8, 8, 8, null]);
+});
+
+test('경계 상태: 적이 나를 보면 장애(alarmed)', () => {
+  const s = newGame(1);
+  s.enemies = [enemy(s, { x: s.p.x + 150 })];
+  run(s, IDLE, 2);
+  assert.equal(s.alarm, 'alarmed');
+  s.enemies = []; run(s, IDLE);
+  assert.equal(s.alarm, 'calm');
+});

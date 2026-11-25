@@ -5,6 +5,7 @@ import { Net } from './net.ts';
 import { sfx } from './sound.ts';
 import { initNews } from './news.ts';
 import { Scene3D } from './scene.ts';
+import { GunRig } from './rig.ts';
 
 const $ = (id: string) => document.getElementById(id)!;
 const cv = $('c') as HTMLCanvasElement;
@@ -14,6 +15,9 @@ const touchUi = $('touch');
 initNews();
 
 const scene = new Scene3D(cv);
+const rigCv = $('rig') as HTMLCanvasElement;
+const rig = new GunRig(rigCv);
+rigCv.style.visibility = "hidden";
 const net = new Net();
 let room: RoomMsg | null = null;
 let snap: SnapMsg | null = null, prev: SnapMsg | null = null;
@@ -25,7 +29,12 @@ function saveBest(v: number) { try { if (v > best()) localStorage.setItem('hr-be
 function showBest() { const b = best(); bestEl.textContent = b ? `최고 점수 ${b}` : ''; }
 showBest();
 
-function resize() { scene.resize(innerWidth, innerHeight); }
+const slotBtns = Array.from(document.querySelectorAll<HTMLButtonElement>('#slots button'));
+function resize() {
+  scene.resize(innerWidth, innerHeight);
+  rig.resize(rigCv.clientWidth, rigCv.clientHeight);
+  slotBtns.forEach((b, i) => { const p = i < 4 ? rig.layout.slots[i] : rig.layout.grip; b.style.left = `${p.x}px`; });
+}
 addEventListener('resize', resize); resize();
 
 net.onMsg = (m: ServerMsg) => {
@@ -38,7 +47,7 @@ net.onMsg = (m: ServerMsg) => {
 };
 net.onClose = () => { if (playing) stop(); statusEl.textContent = '서버와 연결이 끊겼어요. 다시 시작해 주세요.'; };
 
-function stop() { playing = false; room = snap = prev = null; hud.classList.add('hidden'); touchUi.classList.add('hidden'); title.classList.remove('hidden'); }
+function stop() { playing = false; room = snap = prev = null; hud.classList.add('hidden'); rigCv.style.visibility = 'hidden'; touchUi.classList.add('hidden'); title.classList.remove('hidden'); }
 let finishing = false;
 function finish() {
   if (finishing || !snap) return;
@@ -51,7 +60,7 @@ startBtn.addEventListener('click', async () => {
   try {
     if (!net.open) await net.connect();
     net.send({ t: 'start' }); playing = true;
-    title.classList.add('hidden'); hud.classList.remove('hidden');
+    title.classList.add('hidden'); hud.classList.remove('hidden'); rigCv.style.visibility = 'visible'; resize();
     if (coarse.matches) touchUi.classList.remove('hidden');
     statusEl.textContent = '';
   } catch { statusEl.textContent = '서버에 연결하지 못했어요. 잠시 뒤 다시 눌러 주세요.'; }
@@ -62,7 +71,7 @@ startBtn.addEventListener('click', async () => {
 const held = new Set<string>();
 const mouse = { x: innerWidth / 2, y: innerHeight / 2 };
 const once = { fire: false, melee: false, jump: false, interact: false, act: null as Action | null };
-const KEY_ACT: Record<string, Action> = { r: 'eject', f: 'insert', ' ': 'rack', space: 'rack' };
+const KEY_ACT: Record<string, Action> = { r: 'eject', f: 'insert', ' ': 'rack', space: 'rack', g: 'stow', '1': 'grab1', '2': 'grab2', '3': 'grab3', '4': 'grab4' };
 
 function press(k: string) {
   if (k === 'w' || k === 'arrowup' || k === 'up') once.jump = true;
@@ -89,6 +98,13 @@ for (const b of Array.from(document.querySelectorAll<HTMLButtonElement>('#touch 
   b.addEventListener('touchend', e => { e.preventDefault(); held.delete(k); }, { passive: false });
   b.addEventListener('touchcancel', () => held.delete(k));
 }
+// 칸 이름을 누르면(터치 · 클릭) 그 칸의 탄창을 쥔다. grip 을 누르면 쥔 탄창을 총에 꽂는다
+for (const b of slotBtns) {
+  const k = b.dataset.slot!;
+  const go = (e: Event) => { e.preventDefault(); if (playing) once.act = k === 'grip' ? 'insert' : (`grab${k}` as Action); };
+  b.addEventListener('touchstart', go, { passive: false });
+  b.addEventListener('mousedown', go);
+}
 
 function currentAim(): number {
   if (!snap) return 0;
@@ -105,18 +121,21 @@ function currentAim(): number {
 }
 
 // ---------- HUD ----------
-const hpEl = $('hp'), roomEl = $('roomname'), gunEl = $('gunline'), busyEl = $('busy'), checkEl = $('check'), meterEl = $('meter'), statsEl = $('stats');
+const upEl = $('uptime'), focusEl = $('focus'), alarmEl = $('alarm'), roomEl = $('roomname'), statsEl = $('stats'), checkEl = $('check');
 const logEl = $('log'), centerEl = $('center'), slowEl = $('slowfx');
+const ALARM = { calm: '정상', alert: '경고', alarmed: '장애' } as const;
 let lastLog = '';
 function hudUpdate(s: SnapMsg) {
-  hpEl.textContent = '♥'.repeat(Math.max(0, s.p.hp)) + '♡'.repeat(Math.max(0, 2 - s.p.hp));
+  upEl.textContent = `${Math.round(Math.max(0, s.p.hp) / 2 * 100)}%`;
+  focusEl.textContent = `${Math.round(s.meter * 100)}%`;
+  alarmEl.textContent = ALARM[s.alarm]; alarmEl.className = `alarm ${s.alarm}`;
   roomEl.textContent = room ? `${room.name} (${room.room + 1}/${room.rooms})` : '';
-  gunEl.textContent = `탄창 ${s.gun.magIn ? '꽂힘' : '없음'} · 주머니 ${s.gun.pockets}개`;
-  busyEl.style.width = `${Math.min(100, s.gun.busy / 0.55 * 100)}%`;
-  if (s.ammo) checkEl.textContent = `$ git status\n약실 ${s.ammo.chamber} · 탄창 ${s.ammo.mag ?? '-'}\n주머니 [${s.ammo.pockets.join(', ')}]`;
-  else checkEl.textContent = s.checking > 0 ? '$ git status' + '.'.repeat(Math.ceil(s.checking * 4)) : '';
-  meterEl.style.width = `${s.meter * 100}%`;
   statsEl.textContent = `처치 ${s.kills} · 재시도 ${s.deaths}`;
+  slotBtns.forEach((b, i) => b.classList.toggle('empty', i < 4 ? !s.gun.slots[i] : !s.gun.grip));
+  if (s.ammo) {
+    const a = s.ammo, f = (v: number | null) => (v === null ? '-' : String(v));
+    checkEl.textContent = `$ git status\n약실 ${a.chamber} · 탄창 ${f(a.mag)} · 손 ${f(a.grip)}\n칸 [${a.slots.map(f).join(', ')}]`;
+  } else checkEl.textContent = s.checking > 0 ? '$ git status' + '.'.repeat(Math.ceil(s.checking * 4)) : '';
   const lg = s.log.join('\n');
   if (lg !== lastLog) { lastLog = lg; logEl.replaceChildren(...s.log.map(t => { const d = document.createElement('div'); d.textContent = t; return d; })); }
   centerEl.className = s.won ? 'good' : s.dead ? 'bad' : '';
@@ -144,6 +163,7 @@ function frame(now: number) {
     }
     scene.draw(prev, snap, Math.min(1, (now - snapAt) / 33), aim, dt, now);
     hudUpdate(snap);
+    rig.update(snap, aim, dt, now);
   }
   requestAnimationFrame(frame);
 }
