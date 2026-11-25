@@ -7,10 +7,6 @@ const DESKTOP: [string, string][] = [
   ['A D', '이동'], ['W', '점프'], ['S', '숙이기'], ['클릭', '쏘기'], ['V', '제압'], ['Shift', '슬로모션'],
   ['R', '탄창 빼기'], ['1~4', '탄창 쥐기'], ['F', '꽂기'], ['Space', '슬라이드'], ['G', '칸에 넣기'], ['Q 꾹', '남은 탄'], ['E', '줍기 / 문'],
 ];
-const TOUCH: [string, string][] = [
-  ['◀ ▶', '이동'], ['▲', '점프'], ['▼', '숙이기'], ['쏘기', '조준은 자동'], ['제압', '가까운 적'], ['슬로', '슬로모션'],
-  ['탄창 빼기', ''], ['1~4', '탄창 쥐기'], ['grip', '꽂기'], ['슬라이드', '약실 채우기'], ['점검', '남은 탄'], ['줍기/문', ''],
-];
 
 export class Guide {
   private box = document.getElementById('guide')!;
@@ -21,9 +17,9 @@ export class Guide {
   /** 사건으로 아는 "다음에 할 일" (꽂았으면 슬라이드, 걸렸으면 풀기, 헛방이면 탄창 확인) */
   private need: 'rack' | 'unjam' | 'dry' | null = null;
 
-  constructor(touch: boolean) {
+  constructor() {
     try { this.hidden = localStorage.getItem(KEY) === '1'; } catch { /* 무시 */ }
-    for (const [k, v] of touch ? TOUCH : DESKTOP) {
+    for (const [k, v] of DESKTOP) {
       const item = document.createElement('span'); item.className = 'gk';
       const kb = document.createElement('kbd'); kb.textContent = k;
       item.append(kb);
@@ -31,15 +27,12 @@ export class Guide {
       this.keys.append(item);
     }
     this.toggleBtn.addEventListener('click', () => this.toggle());
-    this.toggleBtn.addEventListener('touchstart', e => { e.preventDefault(); this.toggle(); }, { passive: false });
-    this.apply(touch);
+    this.apply();
   }
 
-  private touch = false;
-  private apply(touch = this.touch) {
-    this.touch = touch;
+  private apply() {
     this.box.classList.toggle('collapsed', this.hidden);
-    this.toggleBtn.textContent = this.hidden ? `조작법 보기${touch ? '' : ' [/]'}` : `숨기기${touch ? '' : ' [/]'}`;
+    this.toggleBtn.textContent = this.hidden ? '조작법 보기 [/]' : '숨기기 [/]';
   }
 
   toggle() {
@@ -59,16 +52,15 @@ export class Guide {
       else if (e === 'eject') this.need = null;
     }
     if (s.dead) this.need = null;
-    const t = this.touch;
     let h = '';
     if (s.dead || s.won) h = '';
-    else if (this.need === 'unjam') h = t ? '총이 걸렸어요 → 슬라이드' : '총이 걸렸어요 → Space';
-    else if (this.need === 'rack') h = t ? '약실이 비었어요 → 슬라이드' : '꽂았으면 → Space 로 슬라이드';
-    else if (!s.gun.magIn && s.gun.grip) h = t ? '쥔 탄창 꽂기 → grip' : '쥔 탄창 꽂기 → F';
-    else if (!s.gun.magIn && s.gun.slots.some(Boolean)) h = t ? '탄창 쥐기 → 아래 1~4' : '탄창 쥐기 → 1~4';
-    else if (!s.gun.magIn) h = t ? '탄창이 없어요 → 바닥 탄창 줍기' : '탄창이 없어요 → E 로 바닥 탄창 줍기';
-    else if (this.need === 'dry') h = t ? '헛방! 다 썼다면 → 탄창 빼기' : '헛방! 다 썼다면 → R 로 탄창 빼기';
-    else if (s.enemies.some(e => e.aim !== null)) h = t ? '조준선! → ▼ 숙이기' : '조준선! → S 로 숙이기 · 책상 뒤로';
+    else if (this.need === 'unjam') h = '총이 걸렸어요 → Space';
+    else if (this.need === 'rack') h = '꽂았으면 → Space 로 슬라이드';
+    else if (!s.gun.magIn && s.gun.grip) h = '쥔 탄창 꽂기 → F';
+    else if (!s.gun.magIn && s.gun.slots.some(Boolean)) h = '탄창 쥐기 → 1~4';
+    else if (!s.gun.magIn) h = '탄창이 없어요 → E 로 바닥 탄창 줍기';
+    else if (this.need === 'dry') h = '헛방! 다 썼다면 → R 로 탄창 빼기';
+    else if (s.enemies.some(e => e.aim !== null)) h = '조준선! → S 로 숙이기 · 책상 뒤로';
     this.hint.textContent = h;
     this.hint.classList.toggle('empty', !h);
   }

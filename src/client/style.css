@@ -1,6 +1,6 @@
 :root { --bg: #11111b; --fg: #cdd6f4; --dim: #9399b2; --accent: #a6e3a1; --danger: #f38ba8; --warn: #f9e2af; --panel: rgba(17,17,27,.72); }
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: ui-monospace, Menlo, Consolas, monospace; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: ui-monospace, Menlo, Consolas, monospace; overflow: hidden; user-select: none; -webkit-user-select: none; }
 canvas { display: block; width: 100vw; height: 100vh; }
 .hidden { display: none !important; }
 .panel { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 16px; background: rgba(17,17,27,.9); text-align: center; word-break: keep-all; }
@@ -46,7 +46,7 @@ button:disabled { opacity: .6; }
 #slots button { position: absolute; bottom: 2px; background: none; border: none; border-bottom: 2px solid #6c7086; border-radius: 0; color: #bac2de; font-size: 14px; padding: 0 10px; pointer-events: auto; transform: translateX(-50%); }
 #slots button.empty { color: #585b70; border-color: #45475a; }
 /* 게임 중 키 설명 */
-#guide { position: absolute; left: 50%; top: 8px; transform: translateX(-50%); width: min(620px, calc(100vw - 420px)); min-width: 260px;
+#guide { position: absolute; left: 50%; top: 8px; transform: translateX(-50%); width: min(620px, calc(100vw - 470px)); min-width: 280px;
   background: rgba(17,17,27,.45); border: 1px solid rgba(108,112,134,.35); border-radius: 8px; padding: 6px 10px 4px; text-align: center; opacity: .85; }
 #guide-keys { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px 10px; font-size: 11px; color: #bac2de; }
 .gk { white-space: nowrap; }
@@ -56,40 +56,16 @@ button:disabled { opacity: .6; }
 #guide-toggle { pointer-events: auto; background: none; border: none; color: var(--dim); font-size: 11px; padding: 2px 6px; margin-top: 2px; text-decoration: underline; }
 #guide.collapsed { background: none; border-color: transparent; padding: 0; width: auto; min-width: 0; }
 #guide.collapsed #guide-keys { display: none; }
-@media (max-width: 700px) { #guide { top: 92px; width: calc(100vw - 24px); min-width: 0; } #guide-keys { font-size: 10px; } }
 @media (max-height: 500px) { #guide-keys { font-size: 10px; } }
 
-/* 터치 */
-#touch { position: fixed; inset: auto 0 0 0; height: 0; z-index: 3; }
-#touch .pad { position: fixed; bottom: 10px; display: grid; gap: 6px; }
-#touch .left { left: 8px; grid-template-columns: repeat(3, 42px); grid-template-areas: ". up ." "left down right"; }
-#touch .left [data-k=up] { grid-area: up; } #touch .left [data-k=left] { grid-area: left; } #touch .left [data-k=right] { grid-area: right; } #touch .left [data-k=down] { grid-area: down; }
-#touch .right { right: 8px; grid-template-columns: repeat(5, 44px); }
-#touch button { height: 44px; padding: 0; font-size: 11px; opacity: .8; line-height: 1.1; }
-#touch .fire { background: #c9516f; }
-@media (pointer: coarse) {
-  :root { --band: clamp(120px, 26vh, 220px); }
-  #rig { bottom: 104px; height: min(calc(100vh - 104px), calc(var(--band) * 2)); }
-  #slots { bottom: 104px; }
-  .term { bottom: calc(104px + clamp(120px, 26vh, 220px) + 4px); }
-  #log { bottom: calc(104px + clamp(120px, 26vh, 220px) + 64px); }
-}
-#rotate { display: none; position: absolute; left: 0; right: 0; top: 46%; opacity: .8; text-align: center; color: var(--warn); font-size: 12px; }
-@media (pointer: coarse) and (orientation: portrait) { #rotate { display: block; } }
-
-/* 아주 좁은 세로 화면: 오른쪽 버튼을 3줄로, 아래 띠를 그만큼 올린다 */
-@media (pointer: coarse) and (max-width: 480px) {
-  #touch .right { grid-template-columns: repeat(3, 44px); }
-  #rig { bottom: 156px; height: min(calc(100vh - 156px), calc(var(--band) * 2)); }
-  #slots { bottom: 156px; }
-  .term { bottom: calc(156px + var(--band) + 4px); }
-  #log { bottom: calc(156px + var(--band) + 64px); }
-}
+/* 좁은 화면(태블릿 기준점 768px 미만)은 지원하지 않는다: 안내로 덮는다 */
+#unsupported { display: none; position: fixed; inset: 0; z-index: 100; background: var(--bg); flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; text-align: center; word-break: keep-all; }
+@media (max-width: 767px) { #unsupported { display: flex; } }
 
 /* 조준점: 마우스 자리 (게임 중에는 기본 커서를 숨긴다) */
 body.playing, body.playing canvas { cursor: none; }
 #crosshair { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; display: none; }
-body.playing.mouse #crosshair { display: block; }
+body.playing #crosshair { display: block; }
 #crosshair i { position: absolute; background: #eff1f5; box-shadow: 0 0 0 1px #11111b; }
 #crosshair i:nth-child(1) { left: -12px; top: -1px; width: 7px; height: 2px; }
 #crosshair i:nth-child(2) { left: 5px; top: -1px; width: 7px; height: 2px; }
@@ -101,3 +77,4 @@ body.playing.mouse #crosshair { display: block; }
 #crosshair.fire i:nth-child(3) { top: -15px; } #crosshair.fire i:nth-child(4) { top: 8px; }
 #crosshair.dim i { background: #7f849c; }
 #slots button, #guide-toggle { cursor: pointer; }
+@media (max-width: 1000px) { #guide-keys { font-size: 10px; gap: 2px 8px; } }

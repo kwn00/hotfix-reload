@@ -12,7 +12,6 @@ const $ = (id: string) => document.getElementById(id)!;
 const cv = $('c') as HTMLCanvasElement;
 const title = $('title'), hud = $('hud'), statusEl = $('status'), bestEl = $('best');
 const startBtn = $('start') as HTMLButtonElement;
-const touchUi = $('touch');
 initNews();
 
 const scene = new Scene3D(cv);
@@ -23,8 +22,7 @@ const net = new Net();
 let room: RoomMsg | null = null;
 let snap: SnapMsg | null = null, prev: SnapMsg | null = null;
 let snapAt = 0, playing = false;
-const coarse = matchMedia('(pointer: coarse)');
-const guide = new Guide(coarse.matches);
+const guide = new Guide();
 
 function best(): number { try { return Number(localStorage.getItem('hr-best') || 0); } catch { return 0; } }
 function saveBest(v: number) { try { if (v > best()) localStorage.setItem('hr-best', String(v)); } catch { /* 무시 */ } }
@@ -54,7 +52,7 @@ net.onMsg = (m: ServerMsg) => {
 };
 net.onClose = () => { if (playing) stop(); statusEl.textContent = '서버와 연결이 끊겼어요. 다시 시작해 주세요.'; };
 
-function stop() { document.body.classList.remove('playing'); playing = false; room = snap = prev = null; hud.classList.add('hidden'); rigCv.style.visibility = 'hidden'; touchUi.classList.add('hidden'); title.classList.remove('hidden'); }
+function stop() { document.body.classList.remove('playing'); playing = false; room = snap = prev = null; hud.classList.add('hidden'); rigCv.style.visibility = 'hidden'; title.classList.remove('hidden'); }
 let finishing = false;
 function finish() {
   if (finishing || !snap) return;
@@ -68,7 +66,6 @@ startBtn.addEventListener('click', async () => {
     if (!net.open) await net.connect();
     net.send({ t: 'start' }); playing = true; document.body.classList.add('playing'); rig.reset(); guide.reset();
     title.classList.add('hidden'); hud.classList.remove('hidden'); rigCv.style.visibility = 'visible'; resize();
-    if (coarse.matches) touchUi.classList.remove('hidden');
     statusEl.textContent = '';
   } catch { statusEl.textContent = '서버에 연결하지 못했어요. 잠시 뒤 다시 눌러 주세요.'; }
   startBtn.disabled = false;
@@ -78,13 +75,12 @@ startBtn.addEventListener('click', async () => {
 const held = new Set<string>();
 const mouse = { x: innerWidth / 2, y: innerHeight / 2 };
 const once = { fire: false, melee: false, jump: false, interact: false, act: null as Action | null };
-const KEY_ACT: Record<string, Action> = { r: 'eject', f: 'insert', ' ': 'rack', space: 'rack', g: 'stow', '1': 'grab1', '2': 'grab2', '3': 'grab3', '4': 'grab4' };
+const KEY_ACT: Record<string, Action> = { r: 'eject', f: 'insert', ' ': 'rack', g: 'stow', '1': 'grab1', '2': 'grab2', '3': 'grab3', '4': 'grab4' };
 
 function press(k: string) {
-  if (k === 'w' || k === 'arrowup' || k === 'up') once.jump = true;
+  if (k === 'w' || k === 'arrowup') once.jump = true;
   else if (k === 'e') once.interact = true;
   else if (k === 'v') once.melee = true;
-  else if (k === 'fire') once.fire = true;
   else if (KEY_ACT[k]) once.act = KEY_ACT[k];
 }
 addEventListener('keydown', e => {
@@ -102,33 +98,18 @@ addEventListener('mousemove', e => {
   mouse.x = e.clientX; mouse.y = e.clientY;
   crossEl.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
 });
-if (!coarse.matches) document.body.classList.add('mouse');
 cv.addEventListener('mousedown', e => { if (!playing) return; if (e.button === 2) once.melee = true; else once.fire = true; });
 cv.addEventListener('contextmenu', e => e.preventDefault());
-for (const b of Array.from(document.querySelectorAll<HTMLButtonElement>('#touch button'))) {
-  const k = b.dataset.k!;
-  b.addEventListener('touchstart', e => { e.preventDefault(); held.add(k); press(k); }, { passive: false });
-  b.addEventListener('touchend', e => { e.preventDefault(); held.delete(k); }, { passive: false });
-  b.addEventListener('touchcancel', () => held.delete(k));
-}
-// 칸 이름을 누르면(터치 · 클릭) 그 칸의 탄창을 쥔다. grip 을 누르면 쥔 탄창을 총에 꽂는다
+// 칸 이름을 누르면 그 칸의 탄창을 쥔다. grip 을 누르면 쥔 탄창을 총에 꽂는다
 for (const b of slotBtns) {
   const k = b.dataset.slot!;
   const go = (e: Event) => { e.preventDefault(); if (playing) once.act = k === 'grip' ? 'insert' : (`grab${k}` as Action); };
-  b.addEventListener('touchstart', go, { passive: false });
   b.addEventListener('mousedown', go);
 }
 
 function currentAim(): number {
   if (!snap) return 0;
   const gx = snap.p.x, gy = snap.p.y - (snap.p.crouch ? 18 : 36);
-  if (coarse.matches) {
-    // 터치: 보이는 적 중 가장 가까운 쪽, 없으면 바라보는 쪽 (서버의 자동 조준이 마무리한다)
-    let bd = 1e9, ang = snap.p.face > 0 ? 0 : Math.PI;
-    for (const e of snap.enemies) { const d = Math.abs(e.x - gx); if (d < bd) { bd = d; ang = Math.atan2(e.y - 36 - gy, e.x - gx); } }
-    if (held.has('left')) ang = Math.PI; if (held.has('right')) ang = 0;
-    return ang;
-  }
   const w = scene.screenToWorld(mouse.x, mouse.y, innerWidth, innerHeight);
   return Math.atan2(w.y - gy, w.x - gx);
 }
@@ -162,13 +143,13 @@ let lastDrawn: SnapMsg | null = null;
 function frame(now: number) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (playing && snap && room) {
-    const right = held.has('d') || held.has('arrowright') || held.has('right');
-    const left = held.has('a') || held.has('arrowleft') || held.has('left');
+    const right = held.has('d') || held.has('arrowright');
+    const left = held.has('a') || held.has('arrowleft');
     const aim = currentAim();
     if (now - lastSend >= 33 || once.fire || once.act || once.melee || once.jump || once.interact) {
       const msg: ClientMsg = {
         t: 'in', mx: (right ? 1 : 0) - (left ? 1 : 0), aim,
-        jump: once.jump, crouch: held.has('s') || held.has('arrowdown') || held.has('down'),
+        jump: once.jump, crouch: held.has('s') || held.has('arrowdown'),
         fire: once.fire, melee: once.melee, act: once.act, interact: once.interact,
         slowmo: held.has('shift'), check: held.has('q'),
       };
