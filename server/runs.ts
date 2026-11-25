@@ -3,7 +3,7 @@
 // - 끝: 화면이 토큰과 입력 기록을 보내면, 서버가 같은 시드로 처음부터 다시 돌려 점수를 직접 계산한다.
 //   화면이 보낸 점수는 믿지 않는다. 기록을 조작하면 결과가 달라질 뿐이다.
 import { createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
-import { checkLog, replay, type ReplayLog, type RunResult } from '../src/shared/replay.ts';
+import { checkLog, ReplayCursor, type ReplayLog, type RunResult } from '../src/shared/replay.ts';
 import { TICK } from '../src/shared/game.ts';
 
 /** 서명 키. SESSION_SECRET 이 없으면 서버가 뜰 때마다 새로 만든다 (그러면 재시작 전에 시작한 판은 검증할 수 없다) */
@@ -40,16 +40,30 @@ setInterval(() => { const cut = Date.now() - TOKEN_TTL_MS; for (const [k, t] of 
 
 export type FinishResult = { ok: true; result: RunResult } | { ok: false; status: number; error: string };
 
-export function finishRun(token: unknown, log: unknown, now = Date.now()): FinishResult {
+/** 본문을 읽기 전에 토큰부터 확인한다 (가짜 토큰으로 큰 본문을 보내 메모리를 쓰게 하지 못하게) */
+export function precheckToken(token: unknown, now = Date.now()): { ok: true } | { ok: false; status: number; error: string } {
   const t = readToken(token);
   if (!t) return { ok: false, status: 400, error: '판 토큰이 올바르지 않아요' };
   if (now - t.iat > TOKEN_TTL_MS) return { ok: false, status: 400, error: '너무 오래된 판이에요' };
   if (used.has(t.rid)) return { ok: false, status: 409, error: '이미 올린 판이에요' };
+  return { ok: true };
+}
+
+/** 한 번에 돌리는 틱 수. 그 사이사이에 다른 요청(화면 파일 · healthz)을 받는다 (0.1 CPU 에서 약 0.1초 분량) */
+const CHUNK = 3000;
+const yieldNow = () => new Promise<void>(r => setImmediate(r));
+
+export async function finishRun(token: unknown, log: unknown, now = Date.now()): Promise<FinishResult> {
+  const pre = precheckToken(token, now);
+  if (!pre.ok) return pre;
+  const t = readToken(token)!;
   const bad = checkLog(log);
   if (bad) return { ok: false, status: 400, error: bad };
   const l = log as ReplayLog;
   // 실제 시간보다 빨리 끝낼 수는 없다 (틱은 1/30초. 일시정지한 시간은 틱에 들어가지 않으므로 기록이 더 짧을 수만 있다)
   if (l.ticks * TICK * 1000 > now - t.iat + 15_000) return { ok: false, status: 400, error: '판 길이가 실제 시간보다 길어요' };
-  used.set(t.rid, now);
-  return { ok: true, result: replay(t.seed, l) };
+  used.set(t.rid, now); // 검증을 시작하는 순간 쓴 것으로 친다 (같은 판을 동시에 여러 번 올리지 못하게)
+  const c = new ReplayCursor(t.seed, l);
+  while (!c.run(CHUNK)) await yieldNow();
+  return { ok: true, result: c.result() };
 }

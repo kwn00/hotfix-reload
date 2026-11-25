@@ -64,7 +64,7 @@ async function finish(s: SnapMsg) {
   let verified: number | null = null;
   if (token) {
     try {
-      const r = await fetch('/api/run/finish', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, log }) });
+      const r = await fetch('/api/run/finish', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Run-Token': token }, body: JSON.stringify({ log }) });
       const j = await r.json() as { ok?: boolean; score?: number; error?: string };
       if (r.ok && j.ok && typeof j.score === 'number') { verified = j.score; resultText = `검증된 점수 ${j.score}`; }
       else resultText = `점수를 검증하지 못했어요 (${typeof j.error === 'string' ? j.error.slice(0, 60) : r.status})`;
@@ -118,7 +118,8 @@ function press(k: string) {
 addEventListener('keydown', e => {
   if (!playing) return;
   if (e.code === 'Escape' || e.code === 'KeyP') { paused = !paused; held.clear(); return; }
-  if (paused) { paused = false; held.clear(); }
+  // 멈춤을 푸는 키는 게임 입력으로 쓰지 않는다 (Space 로 풀었는데 슬라이드까지 당겨지지 않게)
+  if (paused) { paused = false; held.clear(); return; }
   const k = keyName(e.code);
   if (PREVENT.has(e.code)) e.preventDefault();
   if (!k) return;
@@ -145,7 +146,7 @@ cv.addEventListener('contextmenu', e => e.preventDefault());
 // 칸 이름을 누르면 그 칸의 탄창을 쥔다. grip 을 누르면 쥔 탄창을 총에 꽂는다
 for (const b of slotBtns) {
   const k = b.dataset.slot!;
-  const go = (e: Event) => { e.preventDefault(); if (playing) once.act = k === 'grip' ? 'insert' : (`grab${k}` as Action); };
+  const go = (e: Event) => { e.preventDefault(); if (!playing) return; if (paused) { paused = false; return; } once.act = k === 'grip' ? 'insert' : (`grab${k}` as Action); };
   b.addEventListener('mousedown', go);
 }
 
@@ -198,8 +199,10 @@ function tickOnce() {
   r.tick(inp); recorder!.add(inp);
   for (const e of s.events) { frameEvents.push(e); sfx(e); }
   frameFlashes.push(...s.flashes); frameImpacts.push(...s.impacts);
-  if (!room || room.room !== s.room) { room = roomMsg(s); scene.setRoom(room); rig.reset(); prev = null; }
-  prev = snap; snap = snapshot(s);
+  // 방이 바뀌면 이전 방 위치에서 이어 그리지 않는다
+  const newRoom = !room || room.room !== s.room;
+  if (newRoom) { room = roomMsg(s); scene.setRoom(room); rig.reset(); }
+  prev = newRoom ? null : snap; snap = snapshot(s);
 }
 
 function frame(now: number) {

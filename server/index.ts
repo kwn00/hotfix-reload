@@ -6,12 +6,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { APP_VERSION } from '../src/shared/releases.ts';
 import { TokenBucket, clientIp, originAllowed } from './security.ts';
-import { issueRun, finishRun } from './runs.ts';
+import { issueRun, finishRun, precheckToken } from './runs.ts';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist');
-/** 기록 크기 한도: 2시간 판도 넉넉히 들어가는 크기 */
-const MAX_BODY = 2 * 1024 * 1024;
+/** 기록 크기 한도: 2시간 판도 넉넉히 들어가는 크기 (10분 판 ≈ 30~50KB) */
+const MAX_BODY = 1024 * 1024;
+/** 검증을 기다릴 수 있는 수. 넘치면 잠시 뒤에 다시 올려 달라고 한다 (기다리는 기록이 메모리를 쓰므로) */
+const MAX_WAITING = 4;
+let waiting = 0;
 
 const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png' };
 const SECURITY_HEADERS = {
@@ -56,14 +59,21 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, pathname
   }
   if (pathname === '/api/run/finish') {
     if (!b.finish.take()) return json(res, 429, { error: '잠시 뒤에 다시 올려 주세요' });
-    let body: { token?: unknown; log?: unknown };
-    try { body = (await readBody(req)) as typeof body; } catch { return json(res, 400, { error: '기록을 읽지 못했어요' }); }
-    const job = verifying.then(() => finishRun(body?.token, body?.log));
-    verifying = job.catch(() => undefined);
+    // 토큰은 헤더로 받아 본문을 읽기 전에 확인한다
+    const token = req.headers['x-run-token'];
+    const pre = precheckToken(token);
+    if (!pre.ok) { req.resume(); return json(res, pre.status, { ok: false, error: pre.error }); }
+    if (waiting >= MAX_WAITING) { req.resume(); return json(res, 503, { ok: false, error: '검증할 기록이 많아요. 잠시 뒤에 다시 올려 주세요' }); }
+    waiting++;
     try {
+      let body: { log?: unknown };
+      try { body = (await readBody(req)) as typeof body; } catch { return json(res, 400, { ok: false, error: '기록을 읽지 못했어요' }); }
+      const job = verifying.then(() => finishRun(token, body?.log));
+      verifying = job.catch(() => undefined);
       const r = await job;
       return r.ok ? json(res, 200, { ok: true, ...r.result }) : json(res, r.status, { ok: false, error: r.error });
     } catch { return json(res, 500, { ok: false, error: '검증 중 문제가 생겼어요' }); }
+    finally { waiting--; }
   }
   return json(res, 404, { error: '없는 API 예요' });
 }

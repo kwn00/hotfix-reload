@@ -21,6 +21,17 @@ export interface ReleaseNote {
 /** 최신 버전이 맨 위 */
 export const RELEASES: readonly ReleaseNote[] = [
   {
+    version: '0.4.0',
+    date: '2026-11-25',
+    title: '쏘고 맞는 것까지 바로 반응해요',
+    items: [
+      '게임이 내 컴퓨터에서 바로 돌아요. 쏘기 · 맞기 · 적 반응에 지연이 없어요.',
+      '서버와 연결이 끊겨도 판이 날아가지 않아요.',
+      'Esc 로 멈출 수 있고, 다른 탭으로 가면 저절로 멈춰요.',
+      '판을 끝내면 서버가 기록을 다시 돌려 점수를 확인해 줘요.',
+    ],
+  },
+  {
     version: '0.3.6',
     date: '2026-11-25',
     title: '총알이 더 빠르고 날렵해졌어요',

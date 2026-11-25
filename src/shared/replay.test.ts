@@ -68,3 +68,12 @@ test('적을 쓰러뜨리고 · 쓰러지고 · 방을 넘는 4분 판도 서버
     assert.deepEqual([res.room, res.kills, res.deaths, res.score], [r.state.room, r.state.kills, r.state.deaths, score(r.state)]);
   }
 });
+
+test('총이 바쁠 때 누른 쏘기는 나중에 나가도 누른 순간의 조준으로 나간다', () => {
+  const r = new Runner(1); r.state.enemies = []; r.state.rng = () => 0.99;
+  r.tick({ ...NO_INPUT, fire: true, aim: 0 });            // 첫 발 → 총이 잠깐 바쁨
+  r.tick({ ...NO_INPUT, fire: true, aim: -0.8 });         // 바쁜 동안 위로 겨눠 클릭
+  for (let i = 0; i < 6; i++) r.tick({ ...NO_INPUT, aim: -0.8 });
+  const b = r.state.bullets.at(-1)!;
+  assert.ok(b.vy < -1000, `위로 나가야 함 (vy ${b.vy})`);
+});

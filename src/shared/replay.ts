@@ -78,18 +78,44 @@ export function checkLog(x: unknown): string | null {
 
 export interface RunResult { won: boolean; room: number; kills: number; deaths: number; time: number; score: number; ticks: number }
 
-/** 서버 쪽: 시드와 기록으로 처음부터 다시 돌린다 (checkLog 를 통과한 기록만) */
-export function replay(seed: number, log: ReplayLog): RunResult {
-  const r = new Runner(seed);
-  let k = 0, cur: TickInput = { ...NO_INPUT }, wait = log.e[0][0] - 1;
-  for (let t = 0; t < log.ticks; t++) {
-    let inp: TickInput;
-    if (k < log.e.length && wait <= 0) { inp = unpack(log.e[k]); k++; wait = k < log.e.length ? log.e[k][0] - 1 : Infinity; }
-    else { inp = cur; wait--; }
-    r.tick(inp);
-    cur = carry(inp);
-    if (r.state.won) break;
+/**
+ * 서버 쪽: 시드와 기록으로 처음부터 다시 돌린다 (checkLog 를 통과한 기록만).
+ * 나눠서 돌릴 수 있게 커서로 만든다 (긴 판을 검증하는 동안 서버가 다른 요청을 받을 수 있게).
+ */
+export class ReplayCursor {
+  private r: Runner;
+  private k = 0;
+  private cur: TickInput = { ...NO_INPUT };
+  private wait: number;
+  private t = 0;
+  constructor(seed: number, private log: ReplayLog) {
+    this.r = new Runner(seed);
+    this.wait = log.e[0][0] - 1;
   }
-  const s = r.state;
-  return { won: s.won, room: s.room, kills: s.kills, deaths: s.deaths, time: Math.floor(s.time), score: score(s), ticks: r.ticks };
+  /** n 틱까지 돌린다. 끝났으면 true */
+  run(n: number): boolean {
+    const log = this.log;
+    for (let i = 0; i < n; i++) {
+      if (this.t >= log.ticks || this.r.state.won) return true;
+      let inp: TickInput;
+      if (this.k < log.e.length && this.wait <= 0) {
+        inp = unpack(log.e[this.k]); this.k++;
+        this.wait = this.k < log.e.length ? log.e[this.k][0] - 1 : Infinity;
+      } else { inp = this.cur; this.wait--; }
+      this.r.tick(inp);
+      this.cur = carry(inp);
+      this.t++;
+    }
+    return this.t >= log.ticks || this.r.state.won;
+  }
+  result(): RunResult {
+    const s = this.r.state;
+    return { won: s.won, room: s.room, kills: s.kills, deaths: s.deaths, time: Math.floor(s.time), score: score(s), ticks: this.r.ticks };
+  }
+}
+
+export function replay(seed: number, log: ReplayLog): RunResult {
+  const c = new ReplayCursor(seed, log);
+  while (!c.run(10_000)) { /* 끝까지 */ }
+  return c.result();
 }

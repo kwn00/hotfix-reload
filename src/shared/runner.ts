@@ -27,7 +27,7 @@ export class Runner {
   state: State;
   private last: Input = { ...IDLE };
   /** 일회성 동작. 총이 동작 중이면 끝날 때까지 기다렸다 처리한다 (연타로 빨라지지 않게) */
-  private pending = { fire: false, melee: false, jump: false, interact: false, acts: [] as Action[] };
+  private pending = { fire: false, fireAim: 0, melee: false, jump: false, interact: false, acts: [] as Action[] };
   static readonly MAX_ACTS = 4;
   ticks = 0;
 
@@ -37,13 +37,14 @@ export class Runner {
     const m = canonInput(raw);
     const s = this.state, p = this.pending;
     this.last = { ...IDLE, mx: m.mx, aim: m.aim, crouch: m.crouch, slowmo: m.slowmo, check: m.check };
-    if (m.fire) p.fire = true;
+    if (m.fire) { p.fire = true; p.fireAim = m.aim; } // 쏜 순간의 조준을 기억한다 (총이 바빠 나중에 나가도 그 방향으로)
     if (m.melee) p.melee = true;
     if (m.jump) p.jump = true;
     if (m.interact) p.interact = true;
     if (m.act && p.acts.length < Runner.MAX_ACTS) p.acts.push(m.act);
     const busy = s.gun.busy > 0 || s.p.melee > 0;
-    const inp: Input = { ...this.last, jump: p.jump, interact: p.interact,
+    const shootNow = !busy && p.fire;
+    const inp: Input = { ...this.last, aim: shootNow ? p.fireAim : this.last.aim, jump: p.jump, interact: p.interact,
       fire: busy ? false : p.fire, melee: busy ? false : p.melee, act: busy ? null : (p.acts[0] ?? null) };
     p.jump = false; p.interact = false;
     if (!busy) { p.fire = false; p.melee = false; p.acts.shift(); }
