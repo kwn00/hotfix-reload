@@ -38,9 +38,13 @@ function wallTexture(kind: 'office' | 'server' | 'roof') {
   return t;
 }
 
-/** fade: 보이는 정도 (0~1). 시야에 들어오면 서서히 나타나고, 시야에서 벗어나면 마지막 자리에서 서서히 흐려진 뒤 지운다 */
+/** fade: 보이는 정도 (0~1). 시야선 안이면 1, 밖이면 DIM 쪽으로 서서히 바뀐다. 사라지면(쓰러짐 · 주움) 0 까지 흐려진 뒤 지운다 */
 interface Actor { group: THREE.Group; body: THREE.Mesh; gun: THREE.Mesh; laser: THREE.Line; shadow: THREE.Mesh; kind: string; lastX: number; fade: number }
-const FADE_IN = 0.2, FADE_OUT = 0.3;
+/** 시야선 밖일 때 보이는 정도 (가려져 있어도 보이되 살짝 흐리게) */
+const DIM = 0.35;
+const FADE_TIME = 0.25;
+/** 지금 값을 목표 쪽으로 FADE_TIME 동안 옮긴다 */
+const toward = (v: number, target: number, dt: number) => (v < target ? Math.min(target, v + dt / FADE_TIME) : Math.max(target, v - dt / FADE_TIME));
 
 export class Scene3D {
   renderer: THREE.WebGLRenderer;
@@ -265,7 +269,7 @@ export class Scene3D {
       seen.add(e.id);
       let a = this.actors.get(e.id);
       if (!a) { a = this.makeActor(e); this.actors.set(e.id, a); }
-      a.fade = Math.min(1, a.fade + dt / FADE_IN);
+      a.fade = toward(a.fade, e.seen ? 1 : DIM, dt);
       this.setFade(a);
       const p0 = prevE.get(e.id) ?? e;
       const ex = lerp(p0.x, e.x), ey = lerp(p0.y, e.y);
@@ -278,18 +282,18 @@ export class Scene3D {
       const ang = e.aim ?? (e.dir > 0 ? 0 : Math.PI);
       a.gun.position.set(0, d.h * 0.7, 3); a.gun.rotation.z = -ang; a.gun.scale.y = Math.cos(ang) >= 0 ? 1 : -1;
       // 조준선: 쏘기 전에 빨갛게 보인다
-      a.laser.visible = e.aim !== null && a.fade > 0.5;
+      a.laser.visible = e.aim !== null;
       if (e.aim !== null) {
         const len = this.rayLen(ex, ey - d.h * 0.7, e.aim);
         const pos = a.laser.geometry.attributes.position as THREE.BufferAttribute;
         pos.setXYZ(0, 0, d.h * 0.7, 4); pos.setXYZ(1, Math.cos(e.aim) * len, d.h * 0.7 - Math.sin(e.aim) * len, 4); pos.needsUpdate = true;
-        (a.laser.material as THREE.LineBasicMaterial).opacity = 0.5 + 0.4 * Math.sin(now / 40);
+        (a.laser.material as THREE.LineBasicMaterial).opacity = (0.5 + 0.4 * Math.sin(now / 40)) * a.fade;
       }
       (a.body.material as THREE.MeshStandardMaterial).emissive.setHex(e.grabbed ? 0x585b70 : 0x000000);
     }
-    // 시야에서 벗어난 적: 마지막으로 보인 자리에서 서서히 흐려진다 (움직이지 않으니 벽 너머 정보는 새지 않는다)
+    // 쓰러진 적: 그 자리에서 서서히 사라진다
     for (const [id, a] of this.actors) if (!seen.has(id)) {
-      a.fade -= dt / FADE_OUT; a.laser.visible = false;
+      a.fade -= dt / FADE_TIME; a.laser.visible = false;
       if (a.fade <= 0) { this.removeActor(a); this.actors.delete(id); } else this.setFade(a);
     }
 
@@ -300,7 +304,9 @@ export class Scene3D {
     for (const b of s.bullets) {
       seenB.add(b.id);
       let m = this.bullets.get(b.id);
-      if (!m) { m = new THREE.Mesh(this.bulletGeo, b.enemy ? this.enemyBulletMat : this.bulletMat); this.bullets.set(b.id, m); this.dyn.add(m); }
+      if (!m) { m = new THREE.Mesh(this.bulletGeo, this.bulletMat); this.bullets.set(b.id, m); this.dyn.add(m); }
+      // 시야선 밖의 탄은 살짝 흐리게
+      m.material = b.enemy ? (b.seen ? this.enemyBulletMat : this.enemyBulletDim) : (b.seen ? this.bulletMat : this.bulletDim);
       m.rotation.z = Math.atan2(-b.vy, b.vx);
       m.scale.set(b.enemy ? 0.7 : 0.55, b.enemy ? 2 : 0.6, b.enemy ? 2 : 0.6); // 내 탄: 아주 얇고 짧은 줄기(약 10px), 적 탄: 짧고 조금 굵게 (피할 수 있게 잘 보이도록)
       m.position.set(b.x + b.vx * ahead, -(b.y + b.vy * ahead), 4);
@@ -317,12 +323,12 @@ export class Scene3D {
         it = { m: new THREE.Mesh(this.magGeo, mat), fade: 0 };
         this.mags.set(g.id, it); this.dyn.add(it.m);
       }
-      it.fade = Math.min(1, it.fade + dt / FADE_IN);
+      it.fade = toward(it.fade, g.seen ? 1 : DIM, dt);
       (it.m.material as THREE.MeshStandardMaterial).opacity = it.fade;
       it.m.position.set(g.x, -g.y + 6 + Math.sin(now / 300 + g.id) * 2, 6); it.m.rotation.y = now / 600;
     }
     for (const [id, it] of this.mags) if (!seenM.has(id)) {
-      it.fade -= dt / FADE_OUT;
+      it.fade -= dt / FADE_TIME;
       if (it.fade <= 0) { this.dyn.remove(it.m); (it.m.material as THREE.Material).dispose(); this.mags.delete(id); }
       else (it.m.material as THREE.MeshStandardMaterial).opacity = it.fade;
     }
@@ -374,16 +380,18 @@ export class Scene3D {
   private bulletGeo = new THREE.BoxGeometry(18, 1.2, 1.2);
   private bulletMat = new THREE.MeshBasicMaterial({ color: 0xfff1c4 });
   private enemyBulletMat = new THREE.MeshBasicMaterial({ color: 0xff6b6b });
+  private bulletDim = new THREE.MeshBasicMaterial({ color: 0xfff1c4, transparent: true, opacity: DIM });
+  private enemyBulletDim = new THREE.MeshBasicMaterial({ color: 0xff6b6b, transparent: true, opacity: DIM });
   private magGeo = new THREE.BoxGeometry(8, 12, 5);
   private magMat = new THREE.MeshStandardMaterial({ color: 0x313244, emissive: 0xf9e2af, emissiveIntensity: 0.5 });
   /** 적 그림: 종류마다 텍스처와 판 하나를 만들어 두고, 재질만 적마다 따로 (맞을 때 색을 바꾸므로) */
   private actorParts = new Map<string, { body: THREE.Mesh; gun: THREE.Mesh }>();
 
-  /** 적 하나의 보이는 정도를 그림에 반영 (몸은 서서히, 총 · 그림자는 반쯤 흐려지면 숨긴다) */
+  /** 적 하나의 보이는 정도를 그림에 반영 (몸은 투명도, 총 · 그림자는 시야선 안일 때만) */
   private setFade(a: Actor) {
     (a.body.material as THREE.MeshStandardMaterial).opacity = a.fade;
-    a.gun.visible = a.fade > 0.5;
-    a.shadow.visible = a.fade > 0.5;
+    a.gun.visible = a.fade > 0.6;
+    a.shadow.visible = a.fade > 0.6;
   }
 
   private removeActor(a: Actor) {
