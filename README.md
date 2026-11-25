@@ -51,5 +51,18 @@ npm run build && npm start   # 운영과 같은 방식 (http://localhost:8787)
 
 ## 배포
 
+### 판 기록 DB (Neon)
+
+검증한 판의 결과와 입력 기록(압축)은 PostgreSQL 에 저장합니다. 판 번호를 DB 에 남겨 서버가 재시작돼도 같은 판을 두 번 올릴 수 없습니다.
+Render 대시보드 → 서비스 → **Environment** 에 `DATABASE_URL`(Neon 의 연결 주소, `sslmode=require` 그대로)을 넣으면 됩니다. 비밀번호가 들어 있으니 저장소에 커밋하지 마세요.
+테이블은 서버가 처음 쓸 때 만듭니다. DB 가 잠들어 있거나 잠깐 닿지 않아도 게임과 검증은 계속되고, 그동안의 판은 "저장하지 못함"으로 알립니다.
+`DATABASE_URL` 이 없으면 메모리에만 둡니다 (서버가 재시작되면 사라짐). `/healthz` 의 `store` 가 `postgres` 면 DB 를 쓰는 중입니다.
+
+```bash
+TEST_DATABASE_URL=postgres://user@127.0.0.1:5432/testdb npm test   # PostgreSQL 저장소 테스트까지
+```
+
+### Render
+
 Render Blueprint(`render.yaml`)로 웹 서비스 하나에 배포합니다. `main` 에 푸시하면 자동 배포되고,
 새 버전이면 GitHub 릴리즈가 만들어집니다 (`.github/workflows/release.yml`). 릴리즈 절차는 `.claude/skills/release/SKILL.md`.
