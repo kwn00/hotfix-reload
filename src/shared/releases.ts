@@ -21,6 +21,14 @@ export interface ReleaseNote {
 /** 최신 버전이 맨 위 */
 export const RELEASES: readonly ReleaseNote[] = [
   {
+    version: '0.4.1',
+    date: '2026-11-25',
+    title: '판 기록을 서버에 남겨요',
+    items: [
+      '검증한 판의 점수와 기록을 서버에 남겨요. 곧 생길 순위표를 위한 준비예요.',
+    ],
+  },
+  {
     version: '0.4.0',
     date: '2026-11-25',
     title: '쏘고 맞는 것까지 바로 반응해요',

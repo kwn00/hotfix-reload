@@ -65,8 +65,11 @@ async function finish(s: SnapMsg) {
   if (token) {
     try {
       const r = await fetch('/api/run/finish', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Run-Token': token }, body: JSON.stringify({ log }) });
-      const j = await r.json() as { ok?: boolean; score?: number; error?: string };
-      if (r.ok && j.ok && typeof j.score === 'number') { verified = j.score; resultText = `검증된 점수 ${j.score}`; }
+      const j = await r.json() as { ok?: boolean; score?: number; saved?: boolean; error?: string };
+      if (r.ok && j.ok && typeof j.score === 'number') {
+        verified = j.score;
+        resultText = j.saved === false ? `검증된 점수 ${j.score} (서버에 저장하지는 못했어요)` : `검증된 점수 ${j.score}`;
+      }
       else resultText = `점수를 검증하지 못했어요 (${typeof j.error === 'string' ? j.error.slice(0, 60) : r.status})`;
     } catch { resultText = '서버에 연결하지 못해 점수를 검증하지 못했어요'; }
   }

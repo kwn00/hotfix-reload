@@ -29,12 +29,14 @@ Friday Deploy 세계관의 직접 장전 사이드뷰 액션 웹 게임이다 (�
 - **화면 크기**: 데스크톱(키보드 · 마우스) 전용이다. 폭 768px(태블릿 기준점) 미만은 "지원하지 않는 화면" 안내로 덮는다 (`#unsupported`).
   터치 조작은 만들지 않는다. 화면을 바꿨으면 768px 폭부터 넓은 데스크톱까지 확인한다.
 - **문서와 문구**: 한국어로 쓴다. 게임 안 문구는 쉬운 말로 쓴다.
+- **판 기록은 지우지 않는다**: DB 의 `runs` 표(검증 결과 · 입력 기록)는 사용자가 분명하게 지우라고 하기 전에는 지우거나, 못 읽게 만드는 변경을 하지 않는다 (나중에 리더보드가 된다).
+  표의 모양을 바꿀 때는 예전 행을 그대로 읽을 수 있게 한다 (열 추가는 `ADD COLUMN IF NOT EXISTS`).
 
 ## 검증
 
 ```bash
 npm run typecheck   # 타입 검사
-npm test            # 단위 테스트 (버전 일치 · 새 소식 규칙 포함)
+npm test            # 단위 테스트 (버전 일치 · 새 소식 규칙 포함. PostgreSQL 테스트는 TEST_DATABASE_URL 이 있을 때만 돈다)
 npm run build       # 화면 빌드
 ```
 
@@ -45,6 +47,6 @@ npm run build       # 화면 빌드
 ## 구조
 
 - `src/shared` — 서버와 화면이 함께 쓰는 것: 총(`gun.ts`), 방 지도(`level.ts`), 시뮬레이션(`game.ts`), 결정적 수학(`dmath.ts`), 판 진행기(`runner.ts`), 입력 기록 · 다시 돌리기(`replay.ts`), 화면에 그릴 것(`protocol.ts`), 버전과 새 소식(`releases.ts`)
-- `server` — 진입점 · 정적 파일 · API(`index.ts`), 판 토큰 · 검증(`runs.ts`), 요청 제한(`security.ts`)
+- `server` — 진입점 · 정적 파일 · API(`index.ts`), 판 토큰 · 검증(`runs.ts`), 판 기록 저장소(`store.ts`: DATABASE_URL 이 있으면 PostgreSQL(Neon), 없으면 메모리), 요청 제한(`security.ts`)
 - `src/client` — 판 돌리기 · 입력 · HUD · 검증 올리기(`main.ts`), three.js 화면(`scene.ts`), 아래의 총 리그(`rig.ts`), 픽셀 스프라이트(`art.ts`), 키(`keys.ts`), 조작법(`guide.ts`), 새 소식(`news.ts`), 효과음(`sound.ts`), `index.html`
 - `docs/releases/` — 버전별 GitHub 릴리즈 본문

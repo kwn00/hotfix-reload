@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { APP_VERSION } from '../src/shared/releases.ts';
 import { TokenBucket, clientIp, originAllowed } from './security.ts';
 import { issueRun, finishRun, precheckToken } from './runs.ts';
+import { openStore } from './store.ts';
+
+const store = openStore();
 
 const PORT = Number(process.env.PORT ?? 8787);
 const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist');
@@ -68,10 +71,10 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, pathname
     try {
       let body: { log?: unknown };
       try { body = (await readBody(req)) as typeof body; } catch { return json(res, 400, { ok: false, error: '기록을 읽지 못했어요' }); }
-      const job = verifying.then(() => finishRun(token, body?.log));
+      const job = verifying.then(() => finishRun(store, token, body?.log));
       verifying = job.catch(() => undefined);
       const r = await job;
-      return r.ok ? json(res, 200, { ok: true, ...r.result }) : json(res, r.status, { ok: false, error: r.error });
+      return r.ok ? json(res, 200, { ok: true, saved: r.saved, ...r.result }) : json(res, r.status, { ok: false, error: r.error });
     } catch { return json(res, 500, { ok: false, error: '검증 중 문제가 생겼어요' }); }
     finally { waiting--; }
   }
@@ -80,7 +83,7 @@ async function api(req: http.IncomingMessage, res: http.ServerResponse, pathname
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
-  if (url.pathname === '/healthz') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ ok: true, version: APP_VERSION })); return; }
+  if (url.pathname === '/healthz') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ ok: true, version: APP_VERSION, store: store.kind })); return; }
   if (url.pathname.startsWith('/api/')) { void api(req, res, url.pathname); return; }
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); res.end(); return; }
   // dist 밖으로 나가는 경로는 막는다
@@ -100,4 +103,4 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => console.log(`[server] http://localhost:${PORT}`));
-for (const sig of ['SIGTERM', 'SIGINT'] as const) process.on(sig, () => { server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 3000).unref(); });
+for (const sig of ['SIGTERM', 'SIGINT'] as const) process.on(sig, () => { server.close(() => { void store.close().finally(() => process.exit(0)); }); setTimeout(() => process.exit(0), 3000).unref(); });
