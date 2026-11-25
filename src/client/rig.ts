@@ -77,6 +77,7 @@ const MAG = [
   '..kkkkkkk',
 ];
 const MAG_OFFSET = { x: 5, y: 9 }; // 몸통 격자에서 탄창이 들어가는 자리
+const GUN_C = { x: 22, y: -12 };    // 총 그림의 가운데 (돌리고 뒤집는 축)
 
 function bulletCells(): Grid { return [{ x: 0, y: 0, c: 'O' }, { x: 1, y: 0, c: 'Y' }, { x: 2, y: 0, c: 'Y' }, { x: 3, y: 0, c: 'Y' }]; }
 
@@ -87,6 +88,9 @@ export class GunRig {
   private scene = new THREE.Scene();
   private camera = new THREE.OrthographicCamera(0, 1, 1, 0, -500, 500);
   private gun = new THREE.Group();
+  /** 총의 가운데를 축으로 돌리고 뒤집는 바깥 그룹 (왼쪽을 겨누면 좌우로 뒤집는다) */
+  private pivot = new THREE.Group();
+  private face = 1;
   private slide: THREE.Group;
   private mag: THREE.Group;
   private handMag: THREE.Group;
@@ -97,6 +101,7 @@ export class GunRig {
   private flashVox: THREE.Mesh;
   private flies: Fly[] = [];
   private gunY = 0;
+  private gunX = 0;
   // 애니메이션 상태
   private slideX = 0; private slideTarget = 0; private slideHold = 0;
   private magY = 0; private magGone = false;
@@ -127,9 +132,10 @@ export class GunRig {
     this.flashVox = new THREE.Mesh(new THREE.BoxGeometry(6, 4, 4), new THREE.MeshBasicMaterial({ color: 0xffe9a8 }));
     this.flashVox.position.set(43, -3, 0); this.flashVox.visible = false;
     this.gun.add(frame, this.mag, this.slide, this.muzzle, this.flashVox);
-    // 살짝 돌려서 입체감이 보이게
-    this.gun.rotation.set(0.12, -0.42, 0);
-    this.scene.add(this.gun, this.handMag);
+    this.gun.position.set(-GUN_C.x, -GUN_C.y, 0);
+    this.pivot.rotation.set(0.12, -0.42, 0); // 살짝 돌려 입체감 (가운데를 축으로)
+    this.pivot.add(this.gun);
+    this.scene.add(this.pivot, this.handMag);
 
     for (let i = 0; i < 4; i++) {
       const m = voxels(cellsOf(MAG), 3); m.rotation.set(0.1, -0.3, 0); this.scene.add(m); this.slotMags.push(m);
@@ -137,16 +143,18 @@ export class GunRig {
     }
   }
 
-  resize(w: number, h: number) {
+  /** w · h: 그리는 영역 (총이 기울어도 잘리지 않게 위로 넉넉하다). band: 총 · 칸의 크기를 정하는 아래 띠 높이 */
+  resize(w: number, h: number, band = h) {
     this.renderer.setSize(w, h, false);
     this.camera.left = 0; this.camera.right = w; this.camera.top = h; this.camera.bottom = 0; this.camera.updateProjectionMatrix();
     // 총: 오른쪽 아래에 크게. 칸: 왼쪽 아래에 나란히
     const narrow = w < 700;
-    const scale = Math.min(w * (narrow ? 0.5 : 0.38) / 44, (h - 8) / 29);
-    this.gun.scale.setScalar(scale);
-    this.gunY = 27 * scale + 4;
-    this.gun.position.set(w - scale * (narrow ? 42 : 47), this.gunY, 0);
-    const slotScale = Math.max(3, Math.min(scale * 0.7, (h - 30) / 12));
+    const scale = Math.min(w * (narrow ? 0.5 : 0.38) / 44, (band - 8) / 29);
+    this.pivot.scale.set(scale * this.face, scale, scale);
+    this.gunY = 27 * scale + 4 + GUN_C.y * scale;
+    this.gunX = w - scale * (narrow ? 42 : 47) + GUN_C.x * scale;
+    this.pivot.position.set(this.gunX, this.gunY, 0);
+    const slotScale = Math.max(3, Math.min(scale * 0.7, (band - 30) / 12));
     const gap = narrow ? w * 0.11 : Math.min(110, w * 0.08);
     this.layout.slots = [];
     for (let i = 0; i < 4; i++) {
@@ -156,7 +164,9 @@ export class GunRig {
       this.layout.slots.push({ x: x + slotScale * 4, y: 10 });
     }
     this.handMag.scale.setScalar(scale * 0.95);
-    this.layout.grip = { x: this.gun.position.x - scale * 14, y: 10 };
+    // grip 글자는 칸 이름과 겹치지 않게 (좁은 화면)
+    const lastSlot = this.layout.slots[3].x;
+    this.layout.grip = { x: Math.max(this.gunX - scale * 36, lastSlot + 52), y: 10 };
   }
 
   /** 날아가는 것들의 원본 (복제는 도형 · 재질을 함께 쓰므로 새로 만들지 않는다) */
@@ -187,21 +197,22 @@ export class GunRig {
   }
 
   update(s: SnapMsg, aim: number, dt: number, now: number, fresh: boolean) {
-    const sc = this.gun.scale.x;
+    const sc = this.pivot.scale.y;
+    const fx = this.face; // 날아가는 방향도 총을 따라 뒤집는다
     for (const e of fresh ? s.events : []) {
       if (e === 'fire' || e === 'jam') {
         this.slideX = -9; this.slideTarget = 0; this.recoil = 1;
         this.muzzle.intensity = 400; this.flashVox.visible = true;
-        if (e === 'fire') this.fly(this.tpl.casing, this.portPos(), new THREE.Vector3(120 + Math.random() * 80, 260 + Math.random() * 80, 0), sc * 0.9);
+        if (e === 'fire') this.fly(this.tpl.casing, this.portPos(), new THREE.Vector3(fx * (120 + Math.random() * 80), 260 + Math.random() * 80, 0), sc * 0.9);
         if (e === 'jam') this.stovepipe.visible = true;
       } else if (e === 'rack' || e === 'rack-waste' || e === 'unjam') {
         this.slideTarget = -11; this.slideHold = 0.14;
-        if (e === 'rack-waste') this.fly(this.tpl.round, this.portPos(), new THREE.Vector3(140, 300, 0), sc * 0.9);
-        if (e === 'unjam') { this.stovepipe.visible = false; this.fly(this.tpl.stove, this.portPos(), new THREE.Vector3(160, 280, 0), sc * 0.9); }
+        if (e === 'rack-waste') this.fly(this.tpl.round, this.portPos(), new THREE.Vector3(fx * 140, 300, 0), sc * 0.9);
+        if (e === 'unjam') { this.stovepipe.visible = false; this.fly(this.tpl.stove, this.portPos(), new THREE.Vector3(fx * 160, 280, 0), sc * 0.9); }
       } else if (e === 'eject') {
         this.magGone = true;
         const at = new THREE.Vector3(MAG_OFFSET.x + 3, -7 - MAG_OFFSET.y - 5, 0).applyMatrix4(this.gun.matrixWorld);
-        this.fly(this.tpl.mag, at, new THREE.Vector3(-30, -60, 0), sc);
+        this.fly(this.tpl.mag, at, new THREE.Vector3(-30 * fx, -60, 0), sc);
       } else if (e === 'insert') {
         this.magGone = false; this.magY = -14; this.handT = 0;
       } else if (e === 'dry' || e === 'jammed') {
@@ -228,9 +239,12 @@ export class GunRig {
 
     // 반동 · 숨쉬기 · 조준 방향에 따라 살짝 기울기
     this.recoil *= Math.pow(0.002, dt);
-    const tilt = Math.max(-0.35, Math.min(0.35, -Math.sin(aim) * 0.35)) * (Math.cos(aim) >= 0 ? 1 : -1);
-    this.gun.rotation.z = tilt * 0.5 + this.recoil * 0.25 + Math.sin(now / 900) * 0.015;
-    this.gun.position.y += (this.gunY + Math.sin(now / 700) * 2 - this.gun.position.y) * 0.2;
+    // 왼쪽을 겨누면 좌우로 뒤집고, 위를 겨누면 어느 쪽이든 총구가 올라간다 (반동도 총구 쪽으로 튄다)
+    const face = Math.cos(aim) >= 0 ? 1 : -1;
+    if (face !== this.face) { this.face = face; this.pivot.scale.x = Math.abs(this.pivot.scale.x) * face; }
+    const up = Math.max(-0.3, Math.min(0.3, -Math.sin(aim) * 0.3));
+    this.pivot.rotation.z = face * (up * 0.5 + this.recoil * 0.25) + Math.sin(now / 900) * 0.015;
+    this.pivot.position.y += (this.gunY + Math.sin(now / 700) * 2 - this.pivot.position.y) * 0.2;
 
     // 손에 쥔 탄창: 총 아래 왼쪽에 떠 있다. 꽂으면 총 쪽으로 올라간다
     if (s.gun.grip && !this.lastGrip) this.handT = 0;
@@ -239,8 +253,9 @@ export class GunRig {
     if (s.gun.grip) {
       this.handT = Math.min(1, this.handT + dt * 5);
       const base = new THREE.Vector3(MAG_OFFSET.x - 14, -7 - MAG_OFFSET.y + 2, 0).applyMatrix4(this.gun.matrixWorld);
-      this.handMag.position.set(base.x - sc * 6 * (1 - this.handT), base.y - sc * 4 * (1 - this.handT) + Math.sin(now / 300) * 2, 20);
-      this.handMag.rotation.set(0.1, -0.5, -0.25 + Math.sin(now / 500) * 0.05);
+      this.handMag.position.set(base.x - fx * sc * 6 * (1 - this.handT), base.y - sc * 4 * (1 - this.handT) + Math.sin(now / 300) * 2, 20);
+      this.handMag.rotation.set(0.1, -0.5 * fx, fx * (-0.25 + Math.sin(now / 500) * 0.05));
+      this.handMag.scale.x = Math.abs(this.handMag.scale.x) * fx;
     }
 
     // 칸의 탄창. 점검 중이면 탄 수만큼 탄을 쌓아 보여 준다

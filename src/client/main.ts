@@ -6,6 +6,7 @@ import { sfx } from './sound.ts';
 import { initNews } from './news.ts';
 import { Scene3D } from './scene.ts';
 import { GunRig } from './rig.ts';
+import { Guide } from './guide.ts';
 
 const $ = (id: string) => document.getElementById(id)!;
 const cv = $('c') as HTMLCanvasElement;
@@ -23,16 +24,22 @@ let room: RoomMsg | null = null;
 let snap: SnapMsg | null = null, prev: SnapMsg | null = null;
 let snapAt = 0, playing = false;
 const coarse = matchMedia('(pointer: coarse)');
+const guide = new Guide(coarse.matches);
 
 function best(): number { try { return Number(localStorage.getItem('hr-best') || 0); } catch { return 0; } }
 function saveBest(v: number) { try { if (v > best()) localStorage.setItem('hr-best', String(v)); } catch { /* 무시 */ } }
 function showBest() { const b = best(); bestEl.textContent = b ? `최고 점수 ${b}` : ''; }
 showBest();
 
+// 아래 띠 높이(CSS 의 --band)를 재는 빈 요소
+const bandProbe = document.createElement('div');
+bandProbe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;height:var(--band);width:0';
+document.body.append(bandProbe);
 const slotBtns = Array.from(document.querySelectorAll<HTMLButtonElement>('#slots button'));
 function resize() {
   scene.resize(innerWidth, innerHeight);
-  rig.resize(rigCv.clientWidth, rigCv.clientHeight);
+  const band = parseFloat(getComputedStyle(bandProbe).height) || 200;
+  rig.resize(rigCv.clientWidth, rigCv.clientHeight, band);
   slotBtns.forEach((b, i) => { const p = i < 4 ? rig.layout.slots[i] : rig.layout.grip; b.style.left = `${p.x}px`; });
 }
 addEventListener('resize', resize); resize();
@@ -47,7 +54,7 @@ net.onMsg = (m: ServerMsg) => {
 };
 net.onClose = () => { if (playing) stop(); statusEl.textContent = '서버와 연결이 끊겼어요. 다시 시작해 주세요.'; };
 
-function stop() { playing = false; room = snap = prev = null; hud.classList.add('hidden'); rigCv.style.visibility = 'hidden'; touchUi.classList.add('hidden'); title.classList.remove('hidden'); }
+function stop() { document.body.classList.remove('playing'); playing = false; room = snap = prev = null; hud.classList.add('hidden'); rigCv.style.visibility = 'hidden'; touchUi.classList.add('hidden'); title.classList.remove('hidden'); }
 let finishing = false;
 function finish() {
   if (finishing || !snap) return;
@@ -59,7 +66,7 @@ startBtn.addEventListener('click', async () => {
   startBtn.disabled = true; statusEl.textContent = '서버에 연결하는 중… (잠든 서버는 깨는 데 1분쯤 걸려요)';
   try {
     if (!net.open) await net.connect();
-    net.send({ t: 'start' }); playing = true; rig.reset();
+    net.send({ t: 'start' }); playing = true; document.body.classList.add('playing'); rig.reset(); guide.reset();
     title.classList.add('hidden'); hud.classList.remove('hidden'); rigCv.style.visibility = 'visible'; resize();
     if (coarse.matches) touchUi.classList.remove('hidden');
     statusEl.textContent = '';
@@ -83,13 +90,19 @@ function press(k: string) {
 addEventListener('keydown', e => {
   if (!playing) return;
   const k = e.key.toLowerCase();
-  if ([' ', 'tab', 'shift', 'arrowup', 'arrowdown'].includes(k)) e.preventDefault();
+  if ([' ', 'tab', 'shift', 'arrowup', 'arrowdown', '/'].includes(k)) e.preventDefault();
+  if (k === '/' && !e.repeat) { guide.toggle(); return; }
   if (!held.has(k) && !e.repeat) press(k);
   held.add(k);
 });
 addEventListener('keyup', e => held.delete(e.key.toLowerCase()));
 addEventListener('blur', () => held.clear());
-cv.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+const crossEl = $('crosshair');
+addEventListener('mousemove', e => {
+  mouse.x = e.clientX; mouse.y = e.clientY;
+  crossEl.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
+});
+if (!coarse.matches) document.body.classList.add('mouse');
 cv.addEventListener('mousedown', e => { if (!playing) return; if (e.button === 2) once.melee = true; else once.fire = true; });
 cv.addEventListener('contextmenu', e => e.preventDefault());
 for (const b of Array.from(document.querySelectorAll<HTMLButtonElement>('#touch button'))) {
@@ -167,6 +180,10 @@ function frame(now: number) {
     scene.draw(prev, snap, Math.min(1, (now - snapAt) / 33), aim, dt, now, fresh);
     hudUpdate(snap);
     rig.update(snap, aim, dt, now, fresh);
+    guide.update(snap, fresh);
+    // 조준점: 쏘면 잠깐 벌어지고, 총이 바쁘면(장전 · 반동) 흐려진다
+    if (fresh && snap.events.some(e => e === 'fire' || e === 'jam')) { crossEl.classList.add('fire'); setTimeout(() => crossEl.classList.remove('fire'), 90); }
+    crossEl.classList.toggle('dim', snap.gun.busy > 0.15);
   }
   requestAnimationFrame(frame);
 }
