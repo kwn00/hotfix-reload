@@ -1,37 +1,48 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseClientMsg, snapshot } from './protocol.ts';
-import { newFloor, step, CHECK_TIME } from './game.ts';
+import { parseClientMsg, snapshot, roomMsg } from './protocol.ts';
+import { newGame, step, IDLE, TICK, CHECK_TIME, Enemy } from './game.ts';
+
+const enemy = (over: Partial<Enemy>): Enemy =>
+  ({ id: 1, kind: 'bug', x: 0, y: 0, vy: 0, hp: 1, dir: -1, alert: 9, aimT: 0, aimAng: Math.PI, cd: 99, burst: 0, burstT: 0, sees: false, ...over });
 
 test('정상 입력은 통과하고 범위를 벗어난 값은 잘린다', () => {
-  const m = parseClientMsg(JSON.stringify({ t: 'in', mx: 5, my: -0.5, aim: 1, fire: true, act: 'rack', check: false }));
-  assert.deepEqual(m, { t: 'in', mx: 1, my: -0.5, aim: 1, fire: true, act: 'rack', check: false });
+  const m = parseClientMsg(JSON.stringify({ t: 'in', mx: 5, aim: 1, jump: true, crouch: false, fire: true, melee: false, act: 'rack', slowmo: false, check: false, interact: false }));
+  assert.deepEqual(m, { t: 'in', mx: 1, aim: 1, jump: true, crouch: false, fire: true, melee: false, act: 'rack', slowmo: false, check: false, interact: false });
 });
 
-test('이상한 메시지는 거부한다', () => {
-  for (const raw of ['nope', '{}', '{"t":"in","mx":"1","my":0,"aim":0}', '{"t":"in","mx":NaN}',
-    JSON.stringify({ t: 'in', mx: 0, my: 0, aim: 0, act: 'cheat' }), JSON.stringify({ t: 'hp', hp: 99 }), 'x'.repeat(300)]) {
-    assert.equal(parseClientMsg(raw), null, raw.slice(0, 40));
-  }
+test('이상한 메시지는 거부하고, 모르는 필드는 버린다', () => {
+  for (const raw of ['nope', '{}', '[]', 'null', '{"t":"in","mx":"1","aim":0}', JSON.stringify({ t: 'in', mx: 0, aim: 0, act: 'fill' }),
+    JSON.stringify({ t: 'hp', hp: 99 }), 'x'.repeat(300)]) assert.equal(parseClientMsg(raw), null, raw.slice(0, 40));
+  const m = parseClientMsg(JSON.stringify({ t: 'in', mx: 0, aim: 0, hp: 99, room: 5 }));
+  assert.ok(m && !('hp' in m) && !('room' in m));
 });
 
-test('스냅샷에 탄 수는 점검할 때만 담긴다', () => {
-  const s = newFloor(1, 1); s.enemies = [];
-  const idle = { mx: 0, my: 0, aim: 0, fire: false, act: null, check: false };
-  step(s, idle, 0.03);
+test('스냅샷에 탄 수는 점검할 때만 담긴다 (주운 탄창의 탄 수도 없다)', () => {
+  const s = newGame(1);
+  step(s, IDLE, TICK);
   const snap = snapshot(s);
   assert.equal(snap.ammo, null);
-  assert.equal(JSON.stringify(snap).includes('looseRounds'), false);
-  for (let t = 0; t < CHECK_TIME + 0.1; t += 0.05) step(s, { ...idle, check: true }, 0.05);
-  assert.deepEqual(snapshot(s).ammo, { chamber: 1, mag: 8, pockets: [8, 8], loose: 0 });
+  for (const m of snap.mags) assert.equal('rounds' in m, false);
+  const json = JSON.stringify(snap);
+  assert.doesNotMatch(json, /rounds|chamber|jammed/);
+  for (let t = 0; t < CHECK_TIME + 0.1; t += TICK) step(s, { ...IDLE, check: true }, TICK);
+  assert.deepEqual(snapshot(s).ammo, { chamber: 1, mag: 8, pockets: [8, 8] });
 });
 
-test('벽 너머의 적은 스냅샷에 없다', () => {
-  const s = newFloor(1, 1);
-  // 플레이어와 적 사이에 벽을 세운다
-  const tx = Math.floor(s.px / 32) + 2, ty = Math.floor(s.py / 32);
-  for (let y = 0; y < 20; y++) s.map[y * 30 + tx] = 1;
-  s.enemies = [{ id: 1, x: (tx + 2) * 32 + 16, y: ty * 32 + 16, hp: 2, kind: 'bug', cd: 0 },
-    { id: 2, x: s.px + 30, y: s.py, hp: 2, kind: 'bug', cd: 0 }];
-  assert.deepEqual(snapshot(s).enemies.map(e => e.id), [2]);
+test('벽 너머의 적과 그 탄은 스냅샷에 없다', () => {
+  const s = newGame(1);
+  const tx = Math.floor(s.p.x / 32) + 3;
+  for (let y = 0; y < s.map.h; y++) s.map.tiles[y * s.map.w + tx] = 1;
+  s.enemies = [enemy({ id: 1, x: (tx + 3) * 32, y: s.p.y }), enemy({ id: 2, x: s.p.x + 50, y: s.p.y })];
+  s.bullets = [{ id: 7, x: (tx + 2) * 32, y: s.p.y - 30, vx: 0, vy: 0, life: 1, enemy: true }];
+  const snap = snapshot(s);
+  assert.deepEqual(snap.enemies.map(e => e.id), [2]);
+  assert.equal(snap.bullets.length, 0);
+});
+
+test('방 정보에는 지형만 있고 적 배치는 없다', () => {
+  const s = newGame(1);
+  const json = JSON.stringify(roomMsg(s));
+  assert.doesNotMatch(json, /enem|bug|npe|start/);
 });
