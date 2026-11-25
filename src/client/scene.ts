@@ -65,8 +65,7 @@ export class Scene3D {
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-    // 휴대폰은 픽셀을 줄여 가볍게 (도트 그림이라 티가 덜 난다)
-    this.renderer.setPixelRatio(Math.min(matchMedia('(pointer: coarse)').matches ? 1.25 : 2, devicePixelRatio));
+    this.renderer.setPixelRatio(Math.min(2, devicePixelRatio));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.35;
     this.scene.background = new THREE.Color(0x0b0b12);
@@ -97,8 +96,7 @@ export class Scene3D {
     this.composer.setSize(w, h);
     this.bloom.resolution.set(w / 2, h / 2);
     this.camera.aspect = w / h;
-    // 좁은 화면(세로 폰)에서는 조금 더 멀리서 본다
-    this.camera.fov = w / h < 1 ? 55 : 38;
+    this.camera.fov = 38;
     this.camera.updateProjectionMatrix();
   }
 
