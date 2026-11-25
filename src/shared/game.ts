@@ -44,6 +44,7 @@ export interface State {
   enemies: Enemy[]; bullets: Bullet[]; mags: Mag[];
   slowmo: boolean; meter: number;
   kills: number; deaths: number; time: number; roomTime: number;
+  roomKills: number;     // 방에 들어올 때의 처치 수 (다시 시작하면 되돌린다: 같은 적을 다시 쓰러뜨려 점수를 불리지 못하게)
   dead: number;          // 쓰러진 뒤 다시 시작하기까지 남은 시간 (0 = 살아 있음)
   won: boolean;
   alarm: Alarm;          // 경계 상태: 적이 나를 보고 있으면 alarmed, 소리를 들었으면 alert
@@ -119,6 +120,7 @@ export function visible(s: State, e: Enemy) {
 export function enterRoom(s: State, room: number) {
   s.room = room; s.map = parseRoom(ROOMS[room]);
   s.checkpoint = cloneGun(s.gun);
+  s.roomKills = s.kills;
   resetRoom(s);
   say(s, ROOMS[room].name);
 }
@@ -130,14 +132,14 @@ function resetRoom(s: State) {
   s.enemies = m.enemies.map(e => ({ id: s.nextId++, kind: e.kind, x: e.x, y: e.y, vy: 0, hp: ENEMY[e.kind].hp, dir: -1 as const,
     alert: 0, aimT: 0, aimAng: Math.PI, cd: 0.5 + s.rng(), burst: 0, burstT: 0, sees: false, heard: 0 }));
   s.mags = m.mags.map(g => ({ id: s.nextId++, x: g.x, y: g.y, rounds: 2 + Math.floor(s.rng() * 6) }));
-  s.bullets = []; s.dead = 0; s.alarm = 'calm'; s.roomTime = 0; s.slowmo = false; s.meter = Math.max(s.meter, 0.5);
+  s.bullets = []; s.dead = 0; s.alarm = 'calm'; s.kills = s.roomKills; s.roomTime = 0; s.slowmo = false; s.meter = Math.max(s.meter, 0.5);
 }
 
 export function newGame(seed: number): State {
   const s = {
     room: 0, map: parseRoom(ROOMS[0]), p: null as unknown as Player, aim: 0,
     gun: newGun(), checkpoint: newGun(), enemies: [], bullets: [], mags: [],
-    slowmo: false, meter: 1, kills: 0, deaths: 0, time: 0, roomTime: 0, dead: 0, won: false, alarm: 'calm', checkHold: 0,
+    slowmo: false, meter: 1, kills: 0, roomKills: 0, deaths: 0, time: 0, roomTime: 0, dead: 0, won: false, alarm: 'calm', checkHold: 0,
     events: [], log: [], nextId: 1, rng: mulberry32(seed), flashes: [], impacts: [],
   } as State;
   enterRoom(s, 0);
@@ -167,6 +169,7 @@ export function step(s: State, inp: Input, dt: number): void {
   s.time += dt;
 
   if (s.dead > 0) {
+    s.slowmo = false;
     s.dead -= dt;
     if (s.dead <= 0) { resetRoom(s); say(s, '다시 시도'); }
     return;
@@ -218,7 +221,7 @@ export function step(s: State, inp: Input, dt: number): void {
     // 문
     if (inp.interact && touchingDoor(s)) {
       s.events.push('door');
-      if (s.room + 1 >= ROOMS.length) { s.won = true; say(s, '롤백 완료. 주말을 지켰어요!'); return; }
+      if (s.room + 1 >= ROOMS.length) { s.won = true; s.slowmo = false; say(s, '롤백 완료. 주말을 지켰어요!'); return; }
       enterRoom(s, s.room + 1);
       return;
     }

@@ -126,3 +126,15 @@ test('경계 상태: 적이 나를 보면 장애(alarmed)', () => {
   s.enemies = []; run(s, IDLE);
   assert.equal(s.alarm, 'calm');
 });
+
+test('다시 시작하면 그 방에서 올린 처치 수는 되돌린다 (점수 불리기 방지)', () => {
+  const s = newGame(1);
+  s.enemies = [enemy(s, { x: s.p.x + 150 })];
+  run(s, { ...IDLE, aim: 0, fire: true }); run(s, IDLE, 10);
+  assert.equal(s.kills, 1);
+  s.p.hp = 1; s.p.invuln = 0;
+  s.bullets.push({ id: 1, x: s.p.x - 10, y: s.p.y - 30, vx: 460, vy: 0, life: 1, enemy: true });
+  run(s, IDLE, 60);
+  assert.equal(s.kills, 0);
+  assert.equal(s.slowmo, false);
+});

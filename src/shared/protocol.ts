@@ -80,7 +80,8 @@ export function snapshot(s: State): SnapMsg {
       id: e.id, kind: e.kind, x: r1(e.x), y: r1(e.y), dir: e.dir,
       aim: e.aimT > 0 || e.burst > 0 ? r2(e.aimAng) : null, grabbed: p.melee > 0 && p.meleeTarget === e.id,
     })),
-    bullets: s.bullets.filter(b => !b.enemy || sees(b.x, b.y)).map(b => ({ id: b.id, x: r1(b.x), y: r1(b.y), enemy: b.enemy })),
+    // 내 탄도 보이는 자리에서만 보낸다 (보이지 않는 곳에서 사라지면 숨은 적의 자리가 드러난다)
+    bullets: s.bullets.filter(b => sees(b.x, b.y)).map(b => ({ id: b.id, x: r1(b.x), y: r1(b.y), enemy: b.enemy })),
     mags: s.mags.filter(m => sees(m.x, m.y - 6)).map(m => ({ id: m.id, x: m.x, y: m.y })),
     flashes: s.flashes.filter(f => !f.enemy || sees(f.x, f.y)).map(f => ({ x: r1(f.x), y: r1(f.y), enemy: f.enemy })),
     impacts: s.impacts.filter(i => sees(i.x, i.y)).map(i => ({ x: r1(i.x), y: r1(i.y) })),

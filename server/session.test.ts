@@ -38,3 +38,28 @@ test('시작 전 입력은 무시한다', () => {
   s.handle({ t: 'in', ...base, fire: true });
   s.tick();
 });
+
+test('총이 동작 중일 때 누른 장전 동작은 순서대로 모두 처리된다', () => {
+  const s = new Session(() => {});
+  s.handle({ t: 'start' });
+  s.state!.enemies = []; s.state!.rng = () => 0.99;
+  s.handle({ t: 'in', ...base, fire: true }); s.tick();          // 쏘기 → 잠깐 바쁨
+  s.handle({ t: 'in', ...base, act: 'eject' });
+  s.handle({ t: 'in', ...base, act: 'grab1' });
+  s.handle({ t: 'in', ...base, act: 'insert' });
+  for (let i = 0; i < 60; i++) s.tick();
+  assert.equal(s.state!.gun.mag, 8, '빼고 → 쥐고 → 꽂기가 모두 됨');
+  assert.equal(s.state!.gun.slots[0], null);
+});
+
+test('새 판을 시작하면 이전 판에서 쌓인 입력은 버린다', () => {
+  const s = new Session(() => {});
+  s.handle({ t: 'start' });
+  s.state!.gun.busy = 5;
+  s.handle({ t: 'in', ...base, act: 'eject', fire: true });
+  s.handle({ t: 'start' });
+  s.state!.enemies = [];
+  s.tick();
+  assert.equal(s.state!.gun.mag, 8);
+  assert.equal(s.state!.bullets.length, 0);
+});

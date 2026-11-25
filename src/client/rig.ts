@@ -159,8 +159,18 @@ export class GunRig {
     this.layout.grip = { x: this.gun.position.x - scale * 14, y: 10 };
   }
 
-  private fly(cells: Grid, at: THREE.Vector3, v: THREE.Vector3, scale: number) {
-    const o = voxels(cells, 2, { metalness: 0.8, roughness: 0.3 });
+  /** 날아가는 것들의 원본 (복제는 도형 · 재질을 함께 쓰므로 새로 만들지 않는다) */
+  private tpl = {
+    casing: voxels([{ x: 0, y: 0, c: 'Y' }, { x: 1, y: 0, c: 'Y' }, { x: 2, y: 0, c: 'Y' }], 2, { metalness: 0.8, roughness: 0.3 }),
+    round: voxels(bulletCells(), 2, { metalness: 0.8, roughness: 0.3 }),
+    stove: voxels(cellsOf(['YYY', 'YYY', 'YYY', 'OOO']), 2, { metalness: 0.8, roughness: 0.3 }),
+    mag: voxels(cellsOf(MAG), 3),
+    bullet: voxels(bulletCells(), 1),
+  };
+
+  private fly(tpl: THREE.Group, at: THREE.Vector3, v: THREE.Vector3, scale: number) {
+    if (this.flies.length > 40) return;
+    const o = tpl.clone();
     o.scale.setScalar(scale); o.position.copy(at); this.scene.add(o);
     this.flies.push({ o, v, spin: new THREE.Vector3(Math.random() * 10, Math.random() * 10, 8 + Math.random() * 10), life: 1.2 });
   }
@@ -168,22 +178,30 @@ export class GunRig {
   /** 슬라이드 근처의 화면 좌표 (탄피가 튀어나오는 자리) */
   private portPos() { return new THREE.Vector3(22, 3, 0).applyMatrix4(this.gun.matrixWorld); }
 
-  update(s: SnapMsg, aim: number, dt: number, now: number) {
+  /** 새 판 · 새 방: 애니메이션 상태를 처음으로 */
+  reset() {
+    this.stovepipe.visible = false; this.slideX = 0; this.slideTarget = 0; this.slideHold = 0;
+    this.magY = 0; this.magGone = false; this.handT = 0; this.recoil = 0; this.lastGrip = false;
+    for (const f of this.flies) this.scene.remove(f.o);
+    this.flies = [];
+  }
+
+  update(s: SnapMsg, aim: number, dt: number, now: number, fresh: boolean) {
     const sc = this.gun.scale.x;
-    for (const e of s.events) {
+    for (const e of fresh ? s.events : []) {
       if (e === 'fire' || e === 'jam') {
         this.slideX = -9; this.slideTarget = 0; this.recoil = 1;
         this.muzzle.intensity = 400; this.flashVox.visible = true;
-        if (e === 'fire') this.fly([{ x: 0, y: 0, c: 'Y' }, { x: 1, y: 0, c: 'Y' }, { x: 2, y: 0, c: 'Y' }], this.portPos(), new THREE.Vector3(120 + Math.random() * 80, 260 + Math.random() * 80, 0), sc * 0.9);
+        if (e === 'fire') this.fly(this.tpl.casing, this.portPos(), new THREE.Vector3(120 + Math.random() * 80, 260 + Math.random() * 80, 0), sc * 0.9);
         if (e === 'jam') this.stovepipe.visible = true;
       } else if (e === 'rack' || e === 'rack-waste' || e === 'unjam') {
         this.slideTarget = -11; this.slideHold = 0.14;
-        if (e === 'rack-waste') this.fly(bulletCells(), this.portPos(), new THREE.Vector3(140, 300, 0), sc * 0.9);
-        if (e === 'unjam') { this.stovepipe.visible = false; this.fly(cellsOf(['YYY', 'YYY', 'YYY', 'OOO']), this.portPos(), new THREE.Vector3(160, 280, 0), sc * 0.9); }
+        if (e === 'rack-waste') this.fly(this.tpl.round, this.portPos(), new THREE.Vector3(140, 300, 0), sc * 0.9);
+        if (e === 'unjam') { this.stovepipe.visible = false; this.fly(this.tpl.stove, this.portPos(), new THREE.Vector3(160, 280, 0), sc * 0.9); }
       } else if (e === 'eject') {
         this.magGone = true;
         const at = new THREE.Vector3(MAG_OFFSET.x + 3, -7 - MAG_OFFSET.y - 5, 0).applyMatrix4(this.gun.matrixWorld);
-        this.fly(cellsOf(MAG), at, new THREE.Vector3(-30, -60, 0), sc);
+        this.fly(this.tpl.mag, at, new THREE.Vector3(-30, -60, 0), sc);
       } else if (e === 'insert') {
         this.magGone = false; this.magY = -14; this.handT = 0;
       } else if (e === 'dry' || e === 'jammed') {
@@ -232,7 +250,7 @@ export class GunRig {
       const n = s.ammo?.slots[i] ?? null;
       if (r.userData.n !== n) {
         r.clear(); r.userData.n = n;
-        if (n !== null) for (let k = 0; k < n; k++) { const b = voxels(bulletCells(), 1); b.position.set(0, k * 1.3, 0); r.add(b); }
+        if (n !== null) for (let k = 0; k < n; k++) { const b = this.tpl.bullet.clone(); b.position.set(0, k * 1.3, 0); r.add(b); }
       }
     }
 

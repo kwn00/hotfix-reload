@@ -106,11 +106,11 @@ export class Scene3D {
   setRoom(r: RoomMsg) {
     this.room = r;
     this.tiles = Uint8Array.from(r.tiles, c => Number(c));
-    for (const a of this.actors.values()) this.dyn.remove(a.group);
+    for (const a of this.actors.values()) this.removeActor(a);
     this.actors.clear();
     for (const m of this.bullets.values()) this.dyn.remove(m); this.bullets.clear();
     for (const m of this.mags.values()) this.dyn.remove(m); this.mags.clear();
-    this.roomGroup.traverse(o => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); const mm = o.material as THREE.Material | THREE.Material[]; (Array.isArray(mm) ? mm : [mm]).forEach(x => x.dispose()); } });
+    this.roomGroup.traverse(o => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); const mm = o.material as THREE.Material | THREE.Material[]; (Array.isArray(mm) ? mm : [mm]).forEach(x => { (x as THREE.MeshStandardMaterial).map?.dispose(); x.dispose(); }); } });
     this.roomGroup.clear(); this.blinkers = [];
     const kind = r.name.includes('서버') ? 'server' : r.name.includes('옥상') ? 'roof' : 'office';
     const W = r.w * TILE, H = r.h * TILE;
@@ -232,7 +232,7 @@ export class Scene3D {
   }
 
   // ---------- 매 프레임 ----------
-  draw(prev: SnapMsg | null, s: SnapMsg, t: number, aim: number, dt: number, now: number) {
+  draw(prev: SnapMsg | null, s: SnapMsg, t: number, aim: number, dt: number, now: number, fresh: boolean) {
     if (!this.room) return;
     const lerp = (a: number, b: number) => a + (b - a) * t;
     const pp = prev ?? s;
@@ -282,7 +282,7 @@ export class Scene3D {
       }
       (a.body.material as THREE.MeshStandardMaterial).emissive.setHex(e.grabbed ? 0x585b70 : 0x000000);
     }
-    for (const [id, a] of this.actors) if (!seen.has(id)) { this.dyn.remove(a.group); this.actors.delete(id); }
+    for (const [id, a] of this.actors) if (!seen.has(id)) { this.removeActor(a); this.actors.delete(id); }
 
     // 탄
     const seenB = new Set<number>();
@@ -290,7 +290,7 @@ export class Scene3D {
       seenB.add(b.id);
       let m = this.bullets.get(b.id);
       if (!m) {
-        m = new THREE.Mesh(new THREE.BoxGeometry(14, 2.5, 2.5), new THREE.MeshBasicMaterial({ color: b.enemy ? 0xff6b6b : 0xffe08a }));
+        m = new THREE.Mesh(this.bulletGeo, b.enemy ? this.enemyBulletMat : this.bulletMat);
         this.bullets.set(b.id, m); this.dyn.add(m);
         m.userData.prev = { x: b.x, y: b.y };
       }
@@ -299,7 +299,7 @@ export class Scene3D {
       m.position.set(b.x, -b.y, 4);
       m.userData.prev = { x: b.x, y: b.y };
     }
-    for (const [id, m] of this.bullets) if (!seenB.has(id)) { this.dyn.remove(m); m.geometry.dispose(); this.bullets.delete(id); }
+    for (const [id, m] of this.bullets) if (!seenB.has(id)) { this.dyn.remove(m); this.bullets.delete(id); }
 
     // 바닥의 탄창
     const seenM = new Set<number>();
@@ -307,7 +307,7 @@ export class Scene3D {
       seenM.add(g.id);
       let m = this.mags.get(g.id);
       if (!m) {
-        m = new THREE.Mesh(new THREE.BoxGeometry(8, 12, 5), new THREE.MeshStandardMaterial({ color: 0x313244, emissive: 0xf9e2af, emissiveIntensity: 0.5 }));
+        m = new THREE.Mesh(this.magGeo, this.magMat);
         this.mags.set(g.id, m); this.dyn.add(m);
       }
       m.position.set(g.x, -g.y + 6 + Math.sin(now / 300 + g.id) * 2, 6); m.rotation.y = now / 600;
@@ -315,14 +315,14 @@ export class Scene3D {
     for (const [id, m] of this.mags) if (!seenM.has(id)) { this.dyn.remove(m); this.mags.delete(id); }
 
     // 총구 화염 · 불꽃
-    for (const f of s.flashes) {
+    for (const f of fresh ? s.flashes : []) {
       const l = this.flashLights.find(x => x.intensity < 0.5) ?? this.flashLights[0];
       l.color.setHex(f.enemy ? 0xff8a5b : 0xffd27a); l.intensity = 260; l.position.set(f.x, -f.y, 30);
       if (!f.enemy) this.shake = Math.max(this.shake, 3);
       this.spark(f.x, f.y, f.enemy ? 0xff8a5b : 0xffe08a, 4);
     }
-    for (const i of s.impacts) this.spark(i.x, i.y, 0xbac2de, 6);
-    if (s.events.includes('hit')) this.shake = 10;
+    if (fresh) for (const i of s.impacts) this.spark(i.x, i.y, 0xbac2de, 6);
+    if (fresh && s.events.includes('hit')) this.shake = 10;
     for (const l of this.flashLights) l.intensity *= Math.pow(0.002, dt);
     for (const sp of this.sparks) { sp.life -= dt; sp.v.y -= 600 * dt; sp.m.position.addScaledVector(sp.v, dt); sp.m.scale.setScalar(Math.max(0.01, sp.life * 3)); }
     for (const sp of this.sparks.filter(x => x.life <= 0)) { this.dyn.remove(sp.m); }
@@ -354,13 +354,30 @@ export class Scene3D {
     this.composer.render(dt);
   }
 
+  // 돌려 쓰는 도형 · 재질 (탄 · 탄창은 계속 생겼다 사라지므로 새로 만들지 않는다)
+  private bulletGeo = new THREE.BoxGeometry(14, 2.5, 2.5);
+  private bulletMat = new THREE.MeshBasicMaterial({ color: 0xffe08a });
+  private enemyBulletMat = new THREE.MeshBasicMaterial({ color: 0xff6b6b });
+  private magGeo = new THREE.BoxGeometry(8, 12, 5);
+  private magMat = new THREE.MeshStandardMaterial({ color: 0x313244, emissive: 0xf9e2af, emissiveIntensity: 0.5 });
+  /** 적 그림: 종류마다 텍스처와 판 하나를 만들어 두고, 재질만 적마다 따로 (맞을 때 색을 바꾸므로) */
+  private actorParts = new Map<string, { body: THREE.Mesh; gun: THREE.Mesh }>();
+
+  private removeActor(a: Actor) {
+    this.dyn.remove(a.group);
+    (a.body.material as THREE.Material).dispose();
+    a.laser.geometry.dispose(); (a.laser.material as THREE.Material).dispose();
+  }
+
   private makeActor(e: EnemyView): Actor {
     const rows = e.kind === 'npe' ? SPRITES.NPE : e.kind === 'conflict' ? SPRITES.CONFLICT : e.kind === 'debt' ? SPRITES.DEBT : SPRITES.BUG;
-    const body = spriteMesh(rows);
-    const gun = spriteMesh(SPRITES.ENEMY_GUN, 'left');
+    let parts = this.actorParts.get(e.kind);
+    if (!parts) { parts = { body: spriteMesh(rows), gun: spriteMesh(SPRITES.ENEMY_GUN, 'left') }; this.actorParts.set(e.kind, parts); }
+    const body = new THREE.Mesh(parts.body.geometry, (parts.body.material as THREE.Material).clone());
+    const gun = new THREE.Mesh(parts.gun.geometry, parts.gun.material);
     const laserGeo = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
     const laser = new THREE.Line(laserGeo, new THREE.LineBasicMaterial({ color: 0xff4060, transparent: true, opacity: 0.8 }));
-    const shadow = new THREE.Mesh(new THREE.CircleGeometry(14, 16), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.4, depthWrite: false }));
+    const shadow = new THREE.Mesh(this.shadowGeo, this.shadowMat);
     shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.5;
     const group = new THREE.Group(); group.add(body, gun, laser, shadow);
     this.dyn.add(group);
@@ -378,6 +395,8 @@ export class Scene3D {
     return 900;
   }
 
+  private shadowGeo = new THREE.CircleGeometry(14, 16);
+  private shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.4, depthWrite: false });
   private sparkGeo = new THREE.BoxGeometry(2, 2, 2);
   private sparkMats = new Map<number, THREE.MeshBasicMaterial>();
   private spark(x: number, y: number, color: number, n: number) {

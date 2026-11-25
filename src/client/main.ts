@@ -38,7 +38,7 @@ function resize() {
 addEventListener('resize', resize); resize();
 
 net.onMsg = (m: ServerMsg) => {
-  if (m.t === 'room') { room = m; prev = snap = null; scene.setRoom(m); }
+  if (m.t === 'room') { room = m; prev = snap = null; scene.setRoom(m); rig.reset(); }
   else if (m.t === 'snap') {
     prev = snap; snap = m; snapAt = performance.now();
     for (const e of m.events) sfx(e);
@@ -59,7 +59,7 @@ startBtn.addEventListener('click', async () => {
   startBtn.disabled = true; statusEl.textContent = '서버에 연결하는 중… (잠든 서버는 깨는 데 1분쯤 걸려요)';
   try {
     if (!net.open) await net.connect();
-    net.send({ t: 'start' }); playing = true;
+    net.send({ t: 'start' }); playing = true; rig.reset();
     title.classList.add('hidden'); hud.classList.remove('hidden'); rigCv.style.visibility = 'visible'; resize();
     if (coarse.matches) touchUi.classList.remove('hidden');
     statusEl.textContent = '';
@@ -145,6 +145,7 @@ function hudUpdate(s: SnapMsg) {
 
 // ---------- 루프 ----------
 let last = performance.now(), lastSend = 0;
+let lastDrawn: SnapMsg | null = null;
 function frame(now: number) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   if (playing && snap && room) {
@@ -161,9 +162,11 @@ function frame(now: number) {
       net.send(msg);
       once.fire = once.melee = once.jump = once.interact = false; once.act = null; lastSend = now;
     }
-    scene.draw(prev, snap, Math.min(1, (now - snapAt) / 33), aim, dt, now);
+    // 사건(쏘기 · 화염 · 불꽃)은 스냅샷 하나에 한 번만 (화면 주사율과 상관없이)
+    const fresh = snap !== lastDrawn; lastDrawn = snap;
+    scene.draw(prev, snap, Math.min(1, (now - snapAt) / 33), aim, dt, now, fresh);
     hudUpdate(snap);
-    rig.update(snap, aim, dt, now);
+    rig.update(snap, aim, dt, now, fresh);
   }
   requestAnimationFrame(frame);
 }
