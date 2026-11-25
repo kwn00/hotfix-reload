@@ -10,14 +10,16 @@ const V = 1; // 복셀 하나 = 1 단위 (그룹 크기로 화면에 맞춘다)
 type Grid = { x: number; y: number; c: string }[];
 
 /** 픽셀 목록을 깊이 d 칸 복셀로 쌓는다 (색마다 InstancedMesh 하나) */
-function voxels(cells: Grid, depth: number, opts: { roughness?: number; metalness?: number } = {}): THREE.Group {
+function voxels(cells: Grid, depth: number, opts: { roughness?: number; metalness?: number; basic?: boolean } = {}): THREE.Group {
   const g = new THREE.Group();
   const byColor = new Map<string, { x: number; y: number }[]>();
   for (const c of cells) { if (!byColor.has(c.c)) byColor.set(c.c, []); byColor.get(c.c)!.push(c); }
   const box = new THREE.BoxGeometry(V, V, V);
   const m = new THREE.Matrix4();
   for (const [col, list] of byColor) {
-    const mat = new THREE.MeshStandardMaterial({ color: PAL[col] ?? col, roughness: opts.roughness ?? 0.55, metalness: opts.metalness ?? 0.35 });
+    const mat = opts.basic
+      ? new THREE.MeshBasicMaterial({ color: PAL[col] ?? col, toneMapped: false }) // 화염은 색이 바래지 않게
+      : new THREE.MeshStandardMaterial({ color: PAL[col] ?? col, roughness: opts.roughness ?? 0.55, metalness: opts.metalness ?? 0.35 });
     const inst = new THREE.InstancedMesh(box, mat, list.length * depth);
     let i = 0;
     for (const p of list) for (let z = 0; z < depth; z++) { m.makeTranslation(p.x, -p.y, z - (depth - 1) / 2); inst.setMatrixAt(i++, m); }
@@ -81,6 +83,30 @@ const GUN_C = { x: 22, y: -12 };    // 총 그림의 가운데 (돌리고 뒤집
 
 function bulletCells(): Grid { return [{ x: 0, y: 0, c: 'O' }, { x: 1, y: 0, c: 'Y' }, { x: 2, y: 0, c: 'Y' }, { x: 3, y: 0, c: 'Y' }]; }
 
+// ---- 총구 화염 (모양을 골라 쓴다). 격자의 가운데 줄 왼쪽 끝이 총구 ----
+export type FlashStyle = 'box' | 'star' | 'cone' | 'puff' | 'glow' | 'light';
+export const FLASH_STYLES: readonly FlashStyle[] = ['box', 'star', 'cone', 'puff', 'glow', 'light'];
+const FLASH_FRAMES: Record<FlashStyle, string[][]> = {
+  box: [['wwwwww', 'wwwwww', 'wwwwww', 'wwwwww']],
+  // 픽셀 별: 두 프레임
+  star: [
+    ['....o....', '..o.y.o..', '...yyy...', 'wwwwwwyyo', '...yyy...', '..o.y.o..', '....o....'],
+    ['.....', '.oyo.', 'wwwyo', '.oyo.', '.....'],
+  ],
+  // 원뿔: 작게 → 크게 → 불꽃 몇 점
+  cone: [
+    ['yw.', 'www', 'yw.'],
+    ['..oyy...', '.oywwwy.', 'oywwwwwy', '.oywwwy.', '..oyy...'],
+    ['...o..o..', '.....y...', '..o.y..o.', '.....y...', '...o..o..'],
+  ],
+  // 작은 섬광 뒤에 연기
+  puff: [['yy', 'ww', 'yy'], ['.y.', 'wwy', '.y.']],
+  // 작은 픽셀 심지 + 부드럽게 번지는 빛 (glowSprite)
+  glow: [['ywy', 'www', 'ywy'], ['.y.', 'yw.', '.y.']],
+  light: [],
+};
+const FLASH_FRAME_TIME = 0.035;
+
 interface Fly { o: THREE.Object3D; v: THREE.Vector3; spin: THREE.Vector3; life: number }
 
 export class GunRig {
@@ -99,6 +125,12 @@ export class GunRig {
   private slotRounds: THREE.Group[] = [];
   private muzzle: THREE.PointLight;
   private flashVox: THREE.Mesh;
+  flashStyle: FlashStyle = 'box';
+  private flashFrames = new Map<FlashStyle, THREE.Group[]>();
+  private flashT = -1;
+  private flashHolder = new THREE.Group();
+  private glowSprite: THREE.Sprite;
+  private smoke: { o: THREE.Object3D; v: THREE.Vector3; life: number }[] = [];
   private flies: Fly[] = [];
   private gunY = 0;
   private gunX = 0;
@@ -131,7 +163,23 @@ export class GunRig {
     this.muzzle.position.set(44, -3, 6);
     this.flashVox = new THREE.Mesh(new THREE.BoxGeometry(6, 4, 4), new THREE.MeshBasicMaterial({ color: 0xffe9a8 }));
     this.flashVox.position.set(43, -3, 0); this.flashVox.visible = false;
-    this.gun.add(frame, this.mag, this.slide, this.muzzle, this.flashVox);
+    this.gun.add(frame, this.mag, this.slide, this.muzzle, this.flashVox, this.flashHolder);
+    this.flashHolder.position.set(41, -3, 0);
+    // 부드러운 빛 번짐 (glow): 원형 그라데이션을 더해 그린다
+    const gcv = document.createElement('canvas'); gcv.width = gcv.height = 64;
+    const gc = gcv.getContext('2d')!, grad = gc.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0, 'rgba(255,240,200,1)'); grad.addColorStop(0.25, 'rgba(255,190,110,.7)'); grad.addColorStop(1, 'rgba(255,140,60,0)');
+    gc.fillStyle = grad; gc.fillRect(0, 0, 64, 64);
+    this.glowSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(gcv), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, toneMapped: false }));
+    this.glowSprite.position.set(4, 0, 4); this.glowSprite.scale.set(22, 14, 1); this.glowSprite.visible = false;
+    this.flashHolder.add(this.glowSprite);
+    for (const st of FLASH_STYLES) {
+      const frames = FLASH_FRAMES[st].map(rows => {
+        const g = voxels(cellsOf(rows, 0, -Math.floor(rows.length / 2)), 2, { basic: true });
+        g.visible = false; this.flashHolder.add(g); return g;
+      });
+      this.flashFrames.set(st, frames);
+    }
     this.gun.position.set(-GUN_C.x, -GUN_C.y, 0);
     this.pivot.rotation.set(0.12, -0.42, 0); // 살짝 돌려 입체감 (가운데를 축으로)
     this.pivot.add(this.gun);
@@ -152,7 +200,8 @@ export class GunRig {
     const scale = Math.min(w * (narrow ? 0.5 : 0.38) / 44, (band - 8) / 29);
     this.pivot.scale.set(scale * this.face, scale, scale);
     this.gunY = 27 * scale + 4 + GUN_C.y * scale;
-    this.gunX = w - scale * (narrow ? 42 : 47) + GUN_C.x * scale;
+    // 총구 앞에 화염이 들어갈 자리를 남긴다 (오른쪽 끝에 붙이면 화염이 화면 밖으로 잘린다)
+    this.gunX = w - scale * (narrow ? 52 : 58) + GUN_C.x * scale;
     this.pivot.position.set(this.gunX, this.gunY, 0);
     const slotScale = Math.max(3, Math.min(scale * 0.7, (band - 30) / 12));
     const gap = narrow ? w * 0.11 : Math.min(110, w * 0.08);
@@ -188,6 +237,39 @@ export class GunRig {
   /** 슬라이드 근처의 화면 좌표 (탄피가 튀어나오는 자리) */
   private portPos() { return new THREE.Vector3(22, 3, 0).applyMatrix4(this.gun.matrixWorld); }
 
+  private updateFlash(dt: number) {
+    const frames = this.flashFrames.get(this.flashStyle) ?? [];
+    for (const st of FLASH_STYLES) for (const g of this.flashFrames.get(st)!) g.visible = false;
+    this.flashVox.visible = false;
+    this.glowSprite.visible = this.flashStyle === 'glow' && this.flashT >= 0 && this.flashT < FLASH_FRAME_TIME * 3;
+    if (this.glowSprite.visible) (this.glowSprite.material as THREE.SpriteMaterial).opacity = 1 - this.flashT / (FLASH_FRAME_TIME * 3);
+    if (this.flashT >= 0) {
+      const i = Math.floor(this.flashT / FLASH_FRAME_TIME);
+      if (i < frames.length) frames[i].visible = true;
+      else if (i >= (this.flashStyle === 'glow' ? 3 : frames.length)) this.flashT = -1;
+      if (this.flashT >= 0) this.flashT += dt;
+    }
+    for (const p of this.smoke) {
+      p.life -= dt; p.o.position.addScaledVector(p.v, dt); p.v.multiplyScalar(Math.pow(0.15, dt));
+      p.o.scale.setScalar(Math.max(0.01, 0.6 + (1 - p.life) * 1.4) * this.pivot.scale.y * 0.5);
+      ((p.o as THREE.Mesh).material as THREE.MeshBasicMaterial).opacity = Math.max(0, p.life) * 0.6;
+    }
+    for (const p of this.smoke.filter(x => x.life <= 0)) { this.scene.remove(p.o); ((p.o as THREE.Mesh).material as THREE.Material).dispose(); }
+    this.smoke = this.smoke.filter(x => x.life > 0);
+  }
+
+  private smokeGeo = new THREE.BoxGeometry(1, 1, 1);
+  /** 총구에서 피어오르는 연기 몇 덩이 (puff) */
+  private puff() {
+    const at = new THREE.Vector3(43, -3, 0).applyMatrix4(this.gun.matrixWorld);
+    for (let i = 0; i < 5; i++) {
+      const m = new THREE.Mesh(this.smokeGeo, new THREE.MeshBasicMaterial({ color: i % 2 ? 0x9399b2 : 0x6c7086, transparent: true, opacity: 0.6 }));
+      m.position.copy(at).add(new THREE.Vector3((Math.random() - 0.3) * 10, (Math.random() - 0.5) * 6, 30));
+      this.scene.add(m);
+      this.smoke.push({ o: m, v: new THREE.Vector3(this.face * (30 + Math.random() * 50), 30 + Math.random() * 40, 0), life: 0.5 + Math.random() * 0.3 });
+    }
+  }
+
   /** 새 판 · 새 방: 애니메이션 상태를 처음으로 */
   reset() {
     this.stovepipe.visible = false; this.slideX = 0; this.slideTarget = 0; this.slideHold = 0;
@@ -202,7 +284,8 @@ export class GunRig {
     for (const e of fresh ? s.events : []) {
       if (e === 'fire' || e === 'jam') {
         this.slideX = -9; this.slideTarget = 0; this.recoil = 1;
-        this.muzzle.intensity = 400; this.flashVox.visible = true;
+        this.muzzle.intensity = 400; this.flashT = 0;
+        if (this.flashStyle === 'puff') this.puff();
         if (e === 'fire') this.fly(this.tpl.casing, this.portPos(), new THREE.Vector3(fx * (120 + Math.random() * 80), 260 + Math.random() * 80, 0), sc * 0.9);
         if (e === 'jam') this.stovepipe.visible = true;
       } else if (e === 'rack' || e === 'rack-waste' || e === 'unjam') {
@@ -235,7 +318,7 @@ export class GunRig {
 
     // 총구 화염
     this.muzzle.intensity *= Math.pow(0.0005, dt);
-    if (this.muzzle.intensity < 40) this.flashVox.visible = false;
+    this.updateFlash(dt);
 
     // 반동 · 숨쉬기 · 조준 방향에 따라 살짝 기울기
     this.recoil *= Math.pow(0.002, dt);
