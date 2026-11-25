@@ -21,6 +21,14 @@ export interface ReleaseNote {
 /** 최신 버전이 맨 위 */
 export const RELEASES: readonly ReleaseNote[] = [
   {
+    version: '0.3.6',
+    date: '2026-11-25',
+    title: '총알이 더 빠르고 날렵해졌어요',
+    items: [
+      '내 총알이 더 빨라지고, 꼬리가 짧고 더 얇아졌어요.',
+    ],
+  },
+  {
     version: '0.3.5',
     date: '2026-11-25',
     title: '장전이 바로 반응해요',
