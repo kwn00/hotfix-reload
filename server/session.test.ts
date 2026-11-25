@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { Session } from './session.ts';
 import type { ServerMsg } from '../src/shared/protocol.ts';
 
-const base = { mx: 0, aim: 0, jump: false, crouch: false, fire: false, melee: false, act: null, slowmo: false, check: false, interact: false } as const;
+let seq = 1;
+const base = { get seq() { return seq++; }, mx: 0, aim: 0, jump: false, crouch: false, fire: false, melee: false, act: null, slowmo: false, check: false, interact: false } as const;
 
 test('시작하면 방 정보를 보내고 틱마다 스냅샷을 보낸다', () => {
   const out: ServerMsg[] = [];
@@ -62,4 +63,33 @@ test('새 판을 시작하면 이전 판에서 쌓인 입력은 버린다', () =
   s.tick();
   assert.equal(s.state!.gun.mag, 8);
   assert.equal(s.state!.bullets.length, 0);
+});
+
+test('입력은 틱마다 하나씩 처리하고 처리한 번호(ack)를 돌려준다', () => {
+  const acks: number[] = [];
+  const s = new Session(m => { if (m.t === 'snap') acks.push(m.ack); });
+  s.handle({ t: 'start' });
+  s.handle({ t: 'in', ...base, seq: 100, mx: 1 });
+  s.handle({ t: 'in', ...base, seq: 101, mx: 1 });
+  s.tick(); s.tick(); s.tick();
+  assert.deepEqual(acks, [100, 101, 101]);
+});
+
+test('줄이 길어지면(서버가 늦음) 오래된 이동은 건너뛰어 지연이 쌓이지 않는다', () => {
+  const acks: number[] = [];
+  const s = new Session(m => { if (m.t === 'snap') acks.push(m.ack); });
+  s.handle({ t: 'start' });
+  for (let i = 1; i <= 5; i++) s.handle({ t: 'in', ...base, seq: i });
+  s.tick();
+  assert.equal(acks[0], 4, '앞의 셋은 건너뛰고 2개만 남김');
+});
+
+test('입력이 너무 쌓이면 오래된 것을 버리되 그 안의 쏘기 · 장전은 살린다', () => {
+  const s = new Session(() => {});
+  s.handle({ t: 'start' });
+  s.state!.enemies = []; s.state!.rng = () => 0.99;
+  s.handle({ t: 'in', ...base, seq: 1, act: 'eject' });
+  for (let i = 2; i < 12; i++) s.handle({ t: 'in', ...base, seq: i });
+  for (let i = 0; i < 10; i++) s.tick();
+  assert.equal(s.state!.gun.mag, null, '버려진 입력의 탄창 빼기도 처리됨');
 });

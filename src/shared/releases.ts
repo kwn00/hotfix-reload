@@ -21,6 +21,16 @@ export interface ReleaseNote {
 /** 최신 버전이 맨 위 */
 export const RELEASES: readonly ReleaseNote[] = [
   {
+    version: '0.3.4',
+    date: '2026-11-25',
+    title: '키를 누르면 바로 움직여요',
+    items: [
+      '이동 · 점프 · 숙이기가 키를 누르는 즉시 반응해요.',
+      '클릭하는 순간 조준점이 반응해요.',
+      '브라우저 탭과 즐겨찾기에 픽셀 권총 아이콘이 보여요.',
+    ],
+  },
+  {
     version: '0.3.3',
     date: '2026-11-25',
     title: '총과 탄창이 아래 띠로 내려갔어요',

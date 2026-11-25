@@ -7,14 +7,14 @@ const enemy = (over: Partial<Enemy>): Enemy =>
   ({ id: 1, kind: 'bug', x: 0, y: 0, vy: 0, hp: 1, dir: -1, alert: 9, aimT: 0, aimAng: Math.PI, cd: 99, burst: 0, burstT: 0, sees: false, heard: 0, ...over });
 
 test('정상 입력은 통과하고 범위를 벗어난 값은 잘린다', () => {
-  const m = parseClientMsg(JSON.stringify({ t: 'in', mx: 5, aim: 1, jump: true, crouch: false, fire: true, melee: false, act: 'rack', slowmo: false, check: false, interact: false }));
-  assert.deepEqual(m, { t: 'in', mx: 1, aim: 1, jump: true, crouch: false, fire: true, melee: false, act: 'rack', slowmo: false, check: false, interact: false });
+  const m = parseClientMsg(JSON.stringify({ t: 'in', seq: 7, mx: 5, aim: 1, jump: true, crouch: false, fire: true, melee: false, act: 'rack', slowmo: false, check: false, interact: false }));
+  assert.deepEqual(m, { t: 'in', seq: 7, mx: 1, aim: 1, jump: true, crouch: false, fire: true, melee: false, act: 'rack', slowmo: false, check: false, interact: false });
 });
 
 test('이상한 메시지는 거부하고, 모르는 필드는 버린다', () => {
   for (const raw of ['nope', '{}', '[]', 'null', '{"t":"in","mx":"1","aim":0}', JSON.stringify({ t: 'in', mx: 0, aim: 0, act: 'fill' }), JSON.stringify({ t: 'in', mx: 0, aim: 0, act: 'grab5' }),
-    JSON.stringify({ t: 'hp', hp: 99 }), 'x'.repeat(300)]) assert.equal(parseClientMsg(raw), null, raw.slice(0, 40));
-  const m = parseClientMsg(JSON.stringify({ t: 'in', mx: 0, aim: 0, hp: 99, room: 5 }));
+    JSON.stringify({ t: 'hp', hp: 99 }), JSON.stringify({ t: 'in', mx: 0, aim: 0 }), JSON.stringify({ t: 'in', seq: -1, mx: 0, aim: 0 }), JSON.stringify({ t: 'in', seq: 1.5, mx: 0, aim: 0 }), 'x'.repeat(300)]) assert.equal(parseClientMsg(raw), null, raw.slice(0, 40));
+  const m = parseClientMsg(JSON.stringify({ t: 'in', seq: 1, mx: 0, aim: 0, hp: 99, room: 5 }));
   assert.ok(m && !('hp' in m) && !('room' in m));
 });
 
