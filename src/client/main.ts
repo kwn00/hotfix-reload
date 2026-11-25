@@ -1,6 +1,6 @@
 // 화면: 입력을 서버로 보내고, 서버가 보낸 것을 three.js 로 그린다. 판정은 하지 않는다.
 import type { SnapMsg, RoomMsg, ServerMsg, ClientMsg } from '../shared/protocol.ts';
-import type { Action } from '../shared/game.ts';
+import { TICK, type Action } from '../shared/game.ts';
 import { Net } from './net.ts';
 import { sfx } from './sound.ts';
 import { initNews } from './news.ts';
@@ -8,6 +8,7 @@ import { Scene3D } from './scene.ts';
 import { GunRig } from './rig.ts';
 import { Guide } from './guide.ts';
 import { keyName, PREVENT } from './keys.ts';
+import { Predictor } from './predict.ts';
 
 const $ = (id: string) => document.getElementById(id)!;
 const cv = $('c') as HTMLCanvasElement;
@@ -20,6 +21,7 @@ const rigCv = $('rig') as HTMLCanvasElement;
 const rig = new GunRig(rigCv);
 rigCv.style.visibility = "hidden";
 const net = new Net();
+const predictor = new Predictor();
 let room: RoomMsg | null = null;
 let snap: SnapMsg | null = null, prev: SnapMsg | null = null;
 let snapAt = 0, playing = false;
@@ -39,9 +41,10 @@ function resize() {
 addEventListener('resize', resize); resize();
 
 net.onMsg = (m: ServerMsg) => {
-  if (m.t === 'room') { room = m; prev = snap = null; scene.setRoom(m); rig.reset(); }
+  if (m.t === 'room') { room = m; prev = snap = null; scene.setRoom(m); rig.reset(); predictor.setRoom(m); }
   else if (m.t === 'snap') {
     prev = snap; snap = m; snapAt = performance.now();
+    predictor.onSnap(m);
     for (const e of m.events) sfx(e);
     if (m.won) finish();
   }
@@ -60,7 +63,7 @@ startBtn.addEventListener('click', async () => {
   startBtn.disabled = true; statusEl.textContent = '서버에 연결하는 중… (잠든 서버는 깨는 데 1분쯤 걸려요)';
   try {
     if (!net.open) await net.connect();
-    net.send({ t: 'start' }); playing = true; document.body.classList.add('playing'); rig.reset(); guide.reset();
+    net.send({ t: 'start' }); seq = 0; acc = 0; predictor.reset(); playing = true; document.body.classList.add('playing'); rig.reset(); guide.reset();
     title.classList.add('hidden'); hud.classList.remove('hidden'); rigCv.style.visibility = 'visible'; resize();
     statusEl.textContent = '';
   } catch { statusEl.textContent = '서버에 연결하지 못했어요. 잠시 뒤 다시 눌러 주세요.'; }
@@ -96,7 +99,13 @@ addEventListener('mousemove', e => {
   mouse.x = e.clientX; mouse.y = e.clientY;
   crossEl.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
 });
-cv.addEventListener('mousedown', e => { if (!playing) return; if (e.button === 2) once.melee = true; else once.fire = true; });
+cv.addEventListener('mousedown', e => {
+  if (!playing) return;
+  if (e.button === 2) { once.melee = true; return; }
+  once.fire = true;
+  // 누르는 순간 조준점이 반응한다 (탄이 나갔는지는 서버가 정한다)
+  crossEl.classList.add('fire'); setTimeout(() => crossEl.classList.remove('fire'), 90);
+});
 cv.addEventListener('contextmenu', e => e.preventDefault());
 // 칸 이름을 누르면 그 칸의 탄창을 쥔다. grip 을 누르면 쥔 탄창을 총에 꽂는다
 for (const b of slotBtns) {
@@ -105,9 +114,10 @@ for (const b of slotBtns) {
   b.addEventListener('mousedown', go);
 }
 
-function currentAim(): number {
+function currentAim(me: { x: number; y: number; crouch: boolean } | null): number {
   if (!snap) return 0;
-  const gx = snap.p.x, gy = snap.p.y - (snap.p.crouch ? 18 : 36);
+  const p = me ?? snap.p;
+  const gx = p.x, gy = p.y - (p.crouch ? 18 : 36);
   const w = scene.screenToWorld(mouse.x, mouse.y, cv.clientWidth, cv.clientHeight);
   return Math.atan2(w.y - gy, w.x - gx);
 }
@@ -136,27 +146,36 @@ function hudUpdate(s: SnapMsg) {
 }
 
 // ---------- 루프 ----------
-let last = performance.now(), lastSend = 0;
+let last = performance.now(), acc = 0, seq = 0;
 let lastDrawn: SnapMsg | null = null;
 function frame(now: number) {
-  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const raw = (now - last) / 1000; last = now;
+  const dt = Math.min(0.05, raw);
   if (playing && snap && room) {
     const right = held.has('right');
     const left = held.has('left');
-    const aim = currentAim();
-    if (now - lastSend >= 33 || once.fire || once.act || once.melee || once.jump || once.interact) {
+    // 입력은 서버 틱과 같은 30Hz 로, 틱마다 하나씩 번호를 붙여 보내고 내 이동은 바로 예측한다
+    // 화면이 느려도(프레임이 적어도) 실제 흐른 시간만큼 입력 틱을 보낸다 (최대 0.25초까지 따라잡음)
+    acc = Math.min(acc + Math.min(raw, 0.25), 0.25);
+    while (acc >= TICK) {
+      acc -= TICK;
       const msg: ClientMsg = {
-        t: 'in', mx: (right ? 1 : 0) - (left ? 1 : 0), aim,
+        t: 'in', seq: ++seq, mx: (right ? 1 : 0) - (left ? 1 : 0), aim: currentAim(predictor.render(1, 0)),
         jump: once.jump, crouch: held.has('crouch'),
         fire: once.fire, melee: once.melee, act: once.act, interact: once.interact,
         slowmo: held.has('slowmo'), check: held.has('check'),
       };
       net.send(msg);
-      once.fire = once.melee = once.jump = once.interact = false; once.act = null; lastSend = now;
+      predictor.step(msg);
+      once.fire = once.melee = once.jump = once.interact = false; once.act = null;
     }
+    const me = predictor.render(acc / TICK, dt);
+    // 개발 모드에서만: 반응 속도를 재는 시험이 그려지는 내 위치를 읽는다 (운영 빌드에는 들어가지 않는다)
+    if (import.meta.env.DEV) (window as unknown as { __me: unknown }).__me = me ?? snap.p;
+    const aim = currentAim(me);
     // 사건(쏘기 · 화염 · 불꽃)은 스냅샷 하나에 한 번만 (화면 주사율과 상관없이)
     const fresh = snap !== lastDrawn; lastDrawn = snap;
-    scene.draw(prev, snap, Math.min(1, (now - snapAt) / 33), aim, dt, now, fresh);
+    scene.draw(prev, snap, Math.min(1, (now - snapAt) / 33), aim, dt, now, fresh, me);
     hudUpdate(snap);
     rig.update(snap, aim, dt, now, fresh);
     guide.update(snap, fresh);

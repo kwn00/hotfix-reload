@@ -7,12 +7,13 @@ import { State, Action, ACTION_LIST, Alarm, EnemyKind, CHECK_TIME, visible, clea
 import { ROOMS } from './level.ts';
 import { GunEvent } from './gun.ts';
 
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 export const MAX_MSG_BYTES = 256;
 
 export type ClientMsg =
   | { t: 'start' }
-  | { t: 'in'; mx: number; aim: number; jump: boolean; crouch: boolean; fire: boolean; melee: boolean; act: Action | null; slowmo: boolean; check: boolean; interact: boolean };
+  /** 입력 한 틱. seq 는 입력 번호 (서버가 몇 번까지 처리했는지 ack 로 돌려줘서, 화면이 예측을 맞춘다) */
+  | { t: 'in'; seq: number; mx: number; aim: number; jump: boolean; crouch: boolean; fire: boolean; melee: boolean; act: Action | null; slowmo: boolean; check: boolean; interact: boolean };
 
 const ACTS = ACTION_LIST;
 const num = (v: unknown, lo: number, hi: number): number | null =>
@@ -29,10 +30,12 @@ export function parseClientMsg(raw: string): ClientMsg | null {
   if (o.t !== 'in') return null;
   const mx = num(o.mx, -1, 1), aim = num(o.aim, -Math.PI * 2, Math.PI * 2);
   if (mx === null || aim === null) return null;
+  const seq = o.seq;
+  if (typeof seq !== 'number' || !Number.isInteger(seq) || seq < 0 || seq > 2 ** 31) return null;
   const act = o.act === null || o.act === undefined ? null : ACTS.includes(o.act as Action) ? (o.act as Action) : undefined;
   if (act === undefined) return null;
   const b = (k: string) => o[k] === true;
-  return { t: 'in', mx, aim, jump: b('jump'), crouch: b('crouch'), fire: b('fire'), melee: b('melee'), act, slowmo: b('slowmo'), check: b('check'), interact: b('interact') };
+  return { t: 'in', seq, mx, aim, jump: b('jump'), crouch: b('crouch'), fire: b('fire'), melee: b('melee'), act, slowmo: b('slowmo'), check: b('check'), interact: b('interact') };
 }
 
 export interface RoomMsg {
@@ -44,7 +47,9 @@ export interface AmmoView { chamber: number; mag: number | null; slots: (number 
 export interface EnemyView { id: number; kind: EnemyKind; x: number; y: number; dir: 1 | -1; aim: number | null; grabbed: boolean }
 export interface SnapMsg {
   t: 'snap';
-  p: { x: number; y: number; crouch: boolean; face: 1 | -1; hp: number; hurt: boolean; melee: boolean };
+  p: { x: number; y: number; vy: number; ground: boolean; crouch: boolean; face: 1 | -1; hp: number; hurt: boolean; melee: boolean };
+  /** 서버가 처리한 마지막 입력 번호 */
+  ack: number;
   aim: number; dead: boolean; slowmo: boolean; meter: number;
   enemies: EnemyView[];
   bullets: { id: number; x: number; y: number; enemy: boolean }[];
@@ -69,12 +74,13 @@ export function roomMsg(s: State): RoomMsg {
 const r1 = (v: number) => Math.round(v * 10) / 10;
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
-export function snapshot(s: State): SnapMsg {
+export function snapshot(s: State, ack = 0): SnapMsg {
   const g = s.gun, p = s.p, eye = pEye(p);
   const sees = (x: number, y: number) => clear(s.map, eye.x, eye.y, x, y);
   return {
     t: 'snap',
-    p: { x: r1(p.x), y: r1(p.y), crouch: p.crouch, face: p.face, hp: p.hp, hurt: p.invuln > 0, melee: p.melee > 0 },
+    ack,
+    p: { x: p.x, y: p.y, vy: p.vy, ground: p.onGround, crouch: p.crouch, face: p.face, hp: p.hp, hurt: p.invuln > 0, melee: p.melee > 0 },
     aim: r2(s.aim), dead: s.dead > 0, slowmo: s.slowmo, meter: r2(s.meter),
     enemies: s.enemies.filter(e => e.hp > 0 && visible(s, e)).map(e => ({
       id: e.id, kind: e.kind, x: r1(e.x), y: r1(e.y), dir: e.dir,

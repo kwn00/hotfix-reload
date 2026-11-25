@@ -57,6 +57,7 @@ export class Scene3D {
   private room: RoomMsg | null = null;
   private tiles: Uint8Array | null = null;
   private camPos = new THREE.Vector3();
+  private lastPx = 0;
   private camLook = new THREE.Vector3();
   private slow = 0;
   private shake = 0;
@@ -230,25 +231,27 @@ export class Scene3D {
   }
 
   // ---------- 매 프레임 ----------
-  draw(prev: SnapMsg | null, s: SnapMsg, t: number, aim: number, dt: number, now: number, fresh: boolean) {
+  /** me: 화면에서 예측한 내 위치 (있으면 서버 위치 대신 쓴다. 즉시 반응) */
+  draw(prev: SnapMsg | null, s: SnapMsg, t: number, aim: number, dt: number, now: number, fresh: boolean, me: { x: number; y: number; crouch: boolean } | null = null) {
     if (!this.room) return;
     const lerp = (a: number, b: number) => a + (b - a) * t;
     const pp = prev ?? s;
-    const px = lerp(pp.p.x, s.p.x), py = lerp(pp.p.y, s.p.y);
+    const px = me ? me.x : lerp(pp.p.x, s.p.x), py = me ? me.y : lerp(pp.p.y, s.p.y);
+    const crouch = me ? me.crouch : s.p.crouch;
 
     // 플레이어
     const P = this.player;
     P.group.position.set(px, -py, 0);
     P.group.visible = !s.dead || Math.floor(now / 80) % 2 === 0;
-    const moving = Math.abs(s.p.x - pp.p.x) > 0.5;
+    const moving = Math.abs(px - this.lastPx) > 0.05; this.lastPx = px;
     const walkFrame = moving && Math.floor(now / 140) % 2 === 1;
-    P.stand.visible = !s.p.crouch && !walkFrame; P.walk.visible = !s.p.crouch && walkFrame; P.crouch.visible = s.p.crouch;
+    P.stand.visible = !crouch && !walkFrame; P.walk.visible = !crouch && walkFrame; P.crouch.visible = crouch;
     const face = Math.cos(aim) >= 0 ? 1 : -1;
     for (const m of [P.stand, P.walk, P.crouch]) {
       m.scale.x = face;
       (m.material as THREE.MeshStandardMaterial).emissive.setHex(s.p.hurt && Math.floor(now / 60) % 2 ? 0xf38ba8 : 0x000000);
     }
-    P.arm.position.set(0, s.p.crouch ? 18 : 36, 2);
+    P.arm.position.set(0, crouch ? 18 : 36, 2);
     P.arm.rotation.z = -aim;
     P.arm.scale.y = face * 0.75;
     P.arm.visible = !s.p.melee;

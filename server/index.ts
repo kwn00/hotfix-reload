@@ -84,7 +84,16 @@ server.on('upgrade', (req, socket, head) => {
   });
 });
 
-setInterval(() => { for (const e of sessions) e.s.tick(); }, TICK * 1000);
+// 게임 루프: 30Hz. setInterval 은 조금씩 밀려서(틱이 늦어지면 입력이 쌓여 반응이 늦어진다) 다음 틱 시각을 직접 맞춘다
+let nextTick = performance.now();
+function loop() {
+  const now = performance.now();
+  let n = 0;
+  while (now >= nextTick && n < 3) { for (const e of sessions) e.s.tick(); nextTick += TICK * 1000; n++; }
+  if (now - nextTick > 1000) nextTick = now; // 오래 멈췄다 깨어나면 따라잡지 않는다
+  setTimeout(loop, Math.max(0, nextTick - performance.now()));
+}
+loop();
 
 // 응답 없는 연결 정리
 setInterval(() => {

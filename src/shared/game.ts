@@ -103,6 +103,17 @@ export function clear(m: Parsed, x0: number, y0: number, x1: number, y1: number)
   return true;
 }
 
+/** 플레이어의 이동 · 점프 · 숙이기 한 틱. 서버의 판정과 화면의 예측(즉시 반응)이 같은 코드를 쓴다 */
+export type Body = { x: number; y: number; vy: number; onGround: boolean; crouch: boolean };
+export function movePlayer(m: Parsed, p: Body, inp: { mx: number; jump: boolean; crouch: boolean }, pdt: number) {
+  // 숙이기: 일어설 자리가 없으면 숙인 채로
+  const wantCrouch = inp.crouch && p.onGround;
+  if (!wantCrouch && p.crouch && boxHits(m, p.x, p.y, PLAYER.w, PLAYER.stand)) p.crouch = true; else p.crouch = wantCrouch;
+  const speed = p.crouch ? PLAYER.crouchSpeed : PLAYER.speed;
+  if (inp.jump && p.onGround && !p.crouch) { p.vy = -PLAYER.jump; p.onGround = false; }
+  p.onGround = physics(m, p, Math.max(-1, Math.min(1, inp.mx)) * speed * pdt, PLAYER.w, p.crouch ? PLAYER.crouch : PLAYER.stand, pdt);
+}
+
 // 몸의 기준점들
 export const pHeight = (p: Player) => (p.crouch ? PLAYER.crouch : PLAYER.stand);
 export const pEye = (p: Player) => ({ x: p.x, y: p.y - pHeight(p) + 8 });
@@ -196,12 +207,7 @@ export function step(s: State, inp: Input, dt: number): void {
       if (t) { t.hp = 0; kill(s, t, true); }
     }
   } else {
-    // 숙이기: 일어설 자리가 없으면 숙인 채로
-    const wantCrouch = inp.crouch && p.onGround;
-    if (!wantCrouch && p.crouch && boxHits(s.map, p.x, p.y, PLAYER.w, PLAYER.stand)) p.crouch = true; else p.crouch = wantCrouch;
-    const speed = p.crouch ? PLAYER.crouchSpeed : PLAYER.speed;
-    if (inp.jump && p.onGround && !p.crouch) { p.vy = -PLAYER.jump; p.onGround = false; }
-    p.onGround = physics(s.map, p, Math.max(-1, Math.min(1, inp.mx)) * speed * pdt, PLAYER.w, pHeight(p), pdt);
+    movePlayer(s.map, p, inp, pdt);
 
     if (inp.act) ev(s, ACTIONS[inp.act](s.gun));
     // 빠진 탄창은 발밑에 떨어진다 (남은 탄 그대로. 다시 주울 수 있다)
