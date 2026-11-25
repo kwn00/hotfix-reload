@@ -14,7 +14,7 @@ export interface Gun {
 
 export type GunEvent =
   | 'fire' | 'dry' | 'eject' | 'insert' | 'no-mag' | 'rack' | 'rack-waste'
-  | 'busy' | 'fill' | 'fill-none';
+  | 'busy' | 'fill' | 'fill-none' | 'dead';
 
 export const TIME = { eject: 0.25, insert: 0.55, rack: 0.3, fire: 0.12, fill: 0.35 };
 

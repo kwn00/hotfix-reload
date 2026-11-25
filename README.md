@@ -24,17 +24,27 @@
 
 버그 · NullPointerException(빠름) · Merge Conflict(죽으면 `<<<<<<< HEAD` 둘로 갈라짐). 5층을 지나면 주말을 지킵니다.
 
+## 구조와 보안
+
+서버 권위 구조입니다. 화면은 입력 의도(이동 · 조준 · 쏘기 · 장전 · 점검)만 보내고, 위치 · 체력 · 탄 · 점수는 서버가 계산합니다.
+서버는 플레이어가 볼 수 있는 것만 보냅니다: 벽 너머의 적과 탄 수(점검할 때 빼고)는 화면에 전송되지 않습니다.
+
+```
+src/shared   총 · 시뮬레이션 · 통신 규격 · 새 소식 (서버/화면 공용)
+server       Node + ws. 30Hz 게임 루프, 연결 제한, 정적 파일 서빙
+src/client   Vite + Canvas 2D. 입력 전송과 그리기만
+```
+
 ## 개발
 
 ```bash
 npm install
-npm run dev        # 개발 서버
-npm test           # 장전 · 시뮬레이션 단위 테스트
-npm run build      # 타입 검사 + 빌드 (dist/)
+npm run dev        # 게임 서버(8787) + 화면(vite). 화면 주소로 접속
+npm test           # 단위 테스트
+npm run build && npm start   # 운영과 같은 방식 (http://localhost:8787)
 ```
 
-- `src/gun.ts` 권총 상태 머신 (순수 로직)
-- `src/game.ts` 층 생성 · 이동 · 충돌 · 적 AI (시드 기반)
-- `src/main.ts` 입력 · 렌더링 (Canvas 2D) · `src/sound.ts` WebAudio 효과음
+## 배포
 
-지금은 서버 없이 정적 파일만으로 돕니다. 최고 점수는 브라우저(localStorage)에만 저장됩니다.
+Render Blueprint(`render.yaml`)로 웹 서비스 하나에 배포합니다. `main` 에 푸시하면 자동 배포되고,
+새 버전이면 GitHub 릴리즈가 만들어집니다 (`.github/workflows/release.yml`). 릴리즈 절차는 `.claude/skills/release/SKILL.md`.

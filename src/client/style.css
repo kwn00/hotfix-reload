@@ -14,3 +14,13 @@ button { font: inherit; background: #21262d; color: var(--fg); border: 1px solid
 #touch button { height: 56px; padding: 0; font-size: 12px; opacity: .85; }
 #touch .fire { background: var(--danger); }
 @media (pointer: coarse) { #touch { display: grid; } }
+.version { position: absolute; right: 12px; bottom: 12px; background: none; border: none; color: var(--dim); font-size: 12px; text-decoration: underline; padding: 4px; }
+.news { z-index: 10; }
+.news-box { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; width: min(480px, 100%); max-height: 80vh; overflow-y: auto; text-align: left; }
+.news-box h2 { margin: 0 0 8px; color: var(--accent); font-size: 18px; }
+.news-box h3 { margin: 12px 0 0; font-size: 14px; }
+.news-box .date { margin: 2px 0; color: var(--dim); font-size: 12px; }
+.news-box ul { margin: 6px 0; padding-left: 18px; font-size: 13px; line-height: 1.6; }
+.news-box button { margin-top: 8px; width: 100%; }
+button:disabled { opacity: .6; }
+.news-box, .panel { word-break: keep-all; }

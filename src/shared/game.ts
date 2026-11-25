@@ -1,11 +1,11 @@
 // 한 층(floor)의 시뮬레이션. 화면 코드 없이 상태만 바꾼다.
-import { Gun, GunEvent, newGun, tick as gunTick, fire } from './gun.ts';
+import { Gun, GunEvent, newGun, tick as gunTick, fire, eject, insert, rack, fillOne } from './gun.ts';
 
 export const TILE = 32;
 export const W = 30, H = 20; // 타일 단위 맵 크기
 
 export type EnemyKind = 'bug' | 'npe' | 'conflict' | 'mini';
-export interface Enemy { x: number; y: number; hp: number; kind: EnemyKind; cd: number; }
+export interface Enemy { id: number; x: number; y: number; hp: number; kind: EnemyKind; cd: number; }
 export interface Bullet { x: number; y: number; vx: number; vy: number; life: number; }
 export interface Pickup { x: number; y: number; rounds: number; }
 
@@ -20,6 +20,9 @@ export interface State {
   kills: number; time: number;
   over: boolean; cleared: boolean;
   log: { text: string; t: number }[];
+  events: GunEvent[];        // 이번 틱에 일어난 총 소리 (화면의 효과음용)
+  checkHold: number;         // git status 를 들고 있던 시간
+  nextId: number;
   rng: () => number;
 }
 
@@ -63,13 +66,14 @@ export function newFloor(floor: number, seed: number, carry?: { gun: Gun; hp: nu
     px: TILE * 1.5, py: TILE * 1.5, hp: carry?.hp ?? 5, hurt: 0, aim: 0,
     gun: carry?.gun ?? newGun(), enemies: [], bullets: [], pickups: [],
     kills: carry?.kills ?? 0, time: carry?.time ?? 0, over: false, cleared: false, log: [], rng,
+    events: [], checkHold: 0, nextId: 1,
   };
   s.map[(H - 2) * W + (W - 2)] = 0; s.map[W + 1] = 0;
   const n = 5 + floor * 3;
   for (let i = 0; i < n; i++) {
     const kind: EnemyKind = floor >= 2 && rng() < 0.2 ? 'conflict' : rng() < 0.15 + floor * 0.05 ? 'npe' : 'bug';
     const p = freeSpot(s, 8);
-    s.enemies.push({ ...p, hp: ENEMY[kind].hp, kind, cd: 0 });
+    s.enemies.push({ id: s.nextId++, ...p, hp: ENEMY[kind].hp, kind, cd: 0 });
   }
   for (let i = 0; i < 2 + (floor % 2); i++) s.pickups.push({ ...freeSpot(s, 4), rounds: 4 + Math.floor(rng() * 5) });
   say(s, `${floor}층: 출구(🚪 롤백 터미널)까지 가세요`);
@@ -101,7 +105,17 @@ export function los(s: State, x: number, y: number) {
   return true;
 }
 
-export interface Input { mx: number; my: number; aim: number; shoot: boolean; }
+export type Action = 'eject' | 'insert' | 'rack' | 'fill';
+/** 클라이언트가 보내는 "의도". 서버는 이것만 받는다. */
+export interface Input { mx: number; my: number; aim: number; fire: boolean; act: Action | null; check: boolean; }
+export const CHECK_TIME = 0.6;
+export const TICK = 1 / 30;
+
+const ACTIONS: Record<Action, (g: Gun) => GunEvent> = { eject, insert, rack, fill: fillOne };
+const MSG: Partial<Record<GunEvent, string>> = {
+  dry: '찰칵. 약실이 비었어요', 'no-mag': '꽂을 탄창이 없어요', 'rack-waste': '한 발이 튕겨 나갔어요', 'fill-none': '채울 탄이 없어요',
+};
+function gunEvent(s: State, ev: GunEvent) { if (ev === 'busy') return; s.events.push(ev); const m = MSG[ev]; if (m) say(s, m); }
 
 export function shoot(s: State): GunEvent {
   const ev = fire(s.gun);
@@ -113,9 +127,13 @@ export function shoot(s: State): GunEvent {
 }
 
 export function step(s: State, inp: Input, dt: number): void {
+  s.events = [];
   if (s.over || s.cleared) return;
   s.time += dt; s.aim = inp.aim; s.hurt = Math.max(0, s.hurt - dt);
   gunTick(s.gun, dt);
+  s.checkHold = inp.check ? s.checkHold + dt : 0;
+  if (inp.act) gunEvent(s, ACTIONS[inp.act](s.gun));
+  if (inp.fire) gunEvent(s, shoot(s));
   for (const l of s.log) l.t -= dt;
   s.log = s.log.filter(l => l.t > 0);
 
@@ -146,7 +164,7 @@ export function step(s: State, inp: Input, dt: number): void {
     }
     if (d < st.r + PLAYER_R && e.cd === 0 && s.hurt === 0) {
       s.hp -= st.dmg; s.hurt = 0.6; e.cd = 0.8;
-      if (s.hp <= 0) { s.over = true; say(s, 'Segmentation fault (core dumped)'); }
+      if (s.hp <= 0) { s.over = true; s.events.push('dead'); say(s, 'Segmentation fault (core dumped)'); }
     }
   }
   s.enemies = s.enemies.filter(e => e.hp > 0);
@@ -162,7 +180,7 @@ export function step(s: State, inp: Input, dt: number): void {
 function kill(s: State, e: Enemy) {
   s.kills++;
   if (e.kind === 'conflict') {
-    for (let i = 0; i < 2; i++) s.enemies.push({ x: e.x + (i ? 8 : -8), y: e.y, hp: 1, kind: 'mini', cd: 0.5 });
+    for (let i = 0; i < 2; i++) s.enemies.push({ id: s.nextId++, x: e.x + (i ? 8 : -8), y: e.y, hp: 1, kind: 'mini', cd: 0.5 });
     say(s, 'Merge Conflict 가 갈라졌어요!');
   }
   if (s.rng() < 0.25) s.pickups.push({ x: e.x, y: e.y, rounds: 2 + Math.floor(s.rng() * 3) });
