@@ -21,6 +21,14 @@ export interface ReleaseNote {
 /** 최신 버전이 맨 위 */
 export const RELEASES: readonly ReleaseNote[] = [
   {
+    version: '0.3.4',
+    date: '2026-11-25',
+    title: '브라우저 탭에 아이콘이 생겼어요',
+    items: [
+      '브라우저 탭과 즐겨찾기에 픽셀 권총 아이콘이 보여요.',
+    ],
+  },
+  {
     version: '0.3.3',
     date: '2026-11-25',
     title: '총과 탄창이 아래 띠로 내려갔어요',
