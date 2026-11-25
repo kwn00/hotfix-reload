@@ -1,6 +1,6 @@
 # 핫픽스 리로드 — 작업 규칙
 
-Friday Deploy 세계관의 직접 장전 액션 웹 게임이다. 서버 한 프로세스가 화면 · WebSocket 을 모두 서빙한다 (Render 무료 플랜).
+Friday Deploy 세계관의 직접 장전 사이드뷰 액션 웹 게임이다 (화면은 three.js 2.5D). 서버 한 프로세스가 화면 · WebSocket 을 모두 서빙한다 (Render 무료 플랜).
 자세한 소개는 `README.md`.
 
 ## 브랜치와 배포 (가장 중요)
@@ -15,7 +15,7 @@ Friday Deploy 세계관의 직접 장전 액션 웹 게임이다. 서버 한 프
 
 - **서버 권위**: 클라이언트는 입력 "의도"(이동 방향, 조준, 쏘기, 장전 동작, 점검)만 보낸다. 위치 · 체력 · 탄 · 점수는 서버가 계산한다.
   새 기능도 판정은 서버에 두고, 클라이언트가 보낸 값을 믿어야 하는 구조는 만들지 않는다.
-- **숨긴 정보는 보내지 않는다**: 탄 수(점검할 때만), 벽 너머의 적, 시드처럼 플레이어가 몰라야 하는 것은 스냅샷(`src/shared/protocol.ts` 의 `snapshot`)에 담지 않는다.
+- **숨긴 정보는 보내지 않는다**: 탄 수(점검할 때만), 벽 · 책상 너머의 적과 탄, 방의 적 배치, 총 걸림 상태, 시드처럼 플레이어가 몰라야 하는 것은 스냅샷(`src/shared/protocol.ts` 의 `snapshot`)에 담지 않는다.
   클라이언트가 그리지 않더라도 보내면 새어 나간다. 새 정보를 스냅샷에 더할 때는 플레이어가 알아도 되는 것인지 먼저 따진다.
 - **화면에 문자열 넣기**: `textContent` 만 쓴다 (`innerHTML` 금지).
 - **무료 서버의 한계**: 0.1 CPU, 512MB, 15분 동안 접속이 없으면 잠든다. 틱 비용이나 스냅샷 크기가 늘어나는 변경은 재서 확인한다.
@@ -36,7 +36,7 @@ npm run build       # 화면 빌드
 
 ## 구조
 
-- `src/shared` — 서버와 화면이 함께 쓰는 것: 총(`gun.ts`), 시뮬레이션(`game.ts`), 통신 규격과 스냅샷(`protocol.ts`), 버전과 새 소식(`releases.ts`)
+- `src/shared` — 서버와 화면이 함께 쓰는 것: 총(`gun.ts`), 방 지도(`level.ts`), 시뮬레이션(`game.ts`), 통신 규격과 스냅샷(`protocol.ts`), 버전과 새 소식(`releases.ts`)
 - `server` — 진입점 · 정적 파일 · WebSocket(`index.ts`), 판 하나(`session.ts`), 연결 제한(`security.ts`)
-- `src/client` — 화면(`main.ts`, `net.ts`, `news.ts`, `sound.ts`, `style.css`), `index.html`
+- `src/client` — 입력 · HUD(`main.ts`), three.js 화면(`scene.ts`), 아래의 총 리그(`rig.ts`), 픽셀 스프라이트(`art.ts`), 연결(`net.ts`), 새 소식(`news.ts`), 효과음(`sound.ts`), `index.html`
 - `docs/releases/` — 버전별 GitHub 릴리즈 본문

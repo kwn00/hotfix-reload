@@ -17,6 +17,7 @@ export class Net {
       ws.onmessage = e => { try { this.onMsg(JSON.parse(e.data as string)); } catch { /* 무시 */ } };
     });
   }
+  close() { const w = this.ws; this.ws = null; w?.close(); }
   get open() { return this.ws?.readyState === WebSocket.OPEN; }
   send(m: ClientMsg) { if (this.open) this.ws!.send(JSON.stringify(m)); }
 }

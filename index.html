@@ -8,15 +8,36 @@
 </head>
 <body>
   <canvas id="c"></canvas>
+  <canvas id="rig"></canvas>
+  <div id="hud" class="hidden">
+    <div class="tl">
+      <div class="big">Uptime: <span id="uptime">100%</span></div>
+      <div class="big focus">Focus: <span id="focus">100%</span></div>
+    </div>
+    <div class="tr">
+      <div class="dim small">장애 등급</div>
+      <div id="alarm" class="alarm calm">정상</div>
+      <div id="roomname" class="dim small"></div>
+      <div id="stats" class="dim small"></div>
+    </div>
+    <div id="check" class="term"></div>
+    <div id="log"></div>
+    <div id="center"></div>
+    <div id="slowfx"></div>
+    <div id="rotate">📱 가로로 돌리면 더 넓게 보여요</div>
+    <div id="slots">
+      <button data-slot="1">1</button><button data-slot="2">2</button><button data-slot="3">3</button><button data-slot="4">4</button><button data-slot="grip" class="grip">grip</button>
+    </div>
+  </div>
   <div id="title" class="panel">
     <h1>핫픽스 리로드</h1>
-    <p class="sub">금요일 배포가 터졌다. 권총 한 자루와 탄창 몇 개로 롤백 터미널까지.</p>
+    <p class="sub">금요일 배포가 터졌다. 권총 한 자루와 탄창 몇 개로 옥상의 롤백 터미널까지.</p>
     <ul class="keys">
-      <li><b>WASD</b> 이동 · <b>마우스</b> 조준 · <b>클릭</b> 쏘기</li>
-      <li><b>R</b> 탄창 빼기 · <b>F</b> 탄창 꽂기 · <b>Space</b> 슬라이드 당기기</li>
-      <li><b>E</b> 낱개 탄 채우기 · <b>Q</b> 꾹 누르면 <code>git status</code> (남은 탄 확인)</li>
+      <li><b>A D</b> 이동 · <b>W</b> 점프 · <b>S</b> 숙이기 · <b>마우스</b> 조준 · <b>클릭</b> 쏘기</li>
+      <li><b>R</b> 탄창 빼기 · <b>1~4</b> 탄창 쥐기 · <b>F</b> 꽂기 · <b>Space</b> 슬라이드 (걸린 총 풀기) · <b>G</b> 쥔 탄창 칸에 넣기</li>
+      <li><b>Shift</b> 슬로모션 · <b>V / 우클릭</b> 근접 제압 · <b>E</b> 탄창 줍기 / 문 · <b>Q</b> 꾹 = 남은 탄 확인</li>
     </ul>
-    <p class="sub">탄 수는 화면에 안 나와요. 직접 세세요.</p>
+    <p class="sub">탄 수는 화면에 안 나와요. 직접 세세요. 두 방 맞으면 그 방 처음부터.</p>
     <button id="start">배포 시작</button>
     <p id="status" class="sub" role="status"></p>
     <p id="best" class="sub"></p>
@@ -29,13 +50,21 @@
       <button id="news-close">닫기</button>
     </div>
   </div>
-  <div id="touch">
-    <button data-k="r">탄창<br>빼기</button>
-    <button data-k="f">탄창<br>꽂기</button>
-    <button data-k="space">슬라이드</button>
-    <button data-k="e">탄<br>채우기</button>
-    <button data-k="q">점검</button>
-    <button data-k="fire" class="fire">쏘기</button>
+  <div id="touch" class="hidden">
+    <div class="pad left">
+      <button data-k="left">◀</button><button data-k="up">▲</button><button data-k="right">▶</button><button data-k="down">▼</button>
+    </div>
+    <div class="pad right">
+      <button data-k="r">탄창<br>빼기</button>
+      <button data-k="f">꽂기</button>
+      <button data-k="space">슬라<br>이드</button>
+      <button data-k="g">칸에<br>넣기</button>
+      <button data-k="fire" class="fire">쏘기</button>
+      <button data-k="q">점검</button>
+      <button data-k="shift">슬로</button>
+      <button data-k="v">제압</button>
+      <button data-k="e">줍기<br>/문</button>
+    </div>
   </div>
   <script type="module" src="/src/client/main.ts"></script>
 </body>
