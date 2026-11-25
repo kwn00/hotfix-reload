@@ -1,28 +1,87 @@
-// 게임 서버: 화면 파일(dist) + /healthz + WebSocket(/ws) 을 한 프로세스에서 서빙한다.
+// 서버: 화면 파일(dist) + /healthz + 판 시작 · 검증 API.
+// 게임은 브라우저에서 돈다. 서버는 판이 끝날 때 입력 기록을 처음부터 다시 돌려 점수를 직접 계산한다 (runs.ts).
 import http from 'node:http';
 import { createReadStream, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { WebSocketServer, WebSocket } from 'ws';
-import { parseClientMsg, PROTOCOL_VERSION, MAX_MSG_BYTES, ServerMsg } from '../src/shared/protocol.ts';
-import { TICK } from '../src/shared/game.ts';
-import { Session } from './session.ts';
 import { APP_VERSION } from '../src/shared/releases.ts';
 import { TokenBucket, clientIp, originAllowed } from './security.ts';
+import { issueRun, finishRun, precheckToken } from './runs.ts';
 
 const PORT = Number(process.env.PORT ?? 8787);
 const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist');
-const MAX_CONNS = 300, MAX_PER_IP = 4, MAX_VIOLATIONS = 5;
+/** 기록 크기 한도: 2시간 판도 넉넉히 들어가는 크기 (10분 판 ≈ 30~50KB) */
+const MAX_BODY = 1024 * 1024;
+/** 검증을 기다릴 수 있는 수. 넘치면 잠시 뒤에 다시 올려 달라고 한다 (기다리는 기록이 메모리를 쓰므로) */
+const MAX_WAITING = 4;
+let waiting = 0;
 
 const TYPES: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png' };
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer',
-  'Content-Security-Policy': "default-src 'self'; connect-src 'self' ws: wss:; style-src 'self'; script-src 'self'; img-src 'self' data:",
+  'Content-Security-Policy': "default-src 'self'; connect-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:",
 };
+
+/** 주소마다 API 요청 수 제한: 판 시작은 분당 20번, 검증은 분당 10번 남짓 */
+const buckets = new Map<string, { start: TokenBucket; finish: TokenBucket; at: number }>();
+function bucket(ip: string) {
+  let b = buckets.get(ip);
+  if (!b) { b = { start: new TokenBucket(10, 20 / 60), finish: new TokenBucket(5, 10 / 60), at: Date.now() }; buckets.set(ip, b); }
+  b.at = Date.now();
+  return b;
+}
+setInterval(() => { const cut = Date.now() - 10 * 60 * 1000; for (const [k, v] of buckets) if (v.at < cut) buckets.delete(k); }, 60_000).unref();
+
+/** 검증(다시 돌리기)은 CPU 를 쓰므로 한 번에 하나씩 */
+let verifying: Promise<unknown> = Promise.resolve();
+
+function json(res: http.ServerResponse, status: number, body: unknown) {
+  res.writeHead(status, { ...SECURITY_HEADERS, 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(body));
+}
+
+function readBody(req: http.IncomingMessage): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    let size = 0; const chunks: Buffer[] = [];
+    req.on('data', (c: Buffer) => { size += c.length; if (size > MAX_BODY) { reject(new Error('too large')); req.destroy(); } else chunks.push(c); });
+    req.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString())); } catch { reject(new Error('bad json')); } });
+    req.on('error', reject);
+  });
+}
+
+async function api(req: http.IncomingMessage, res: http.ServerResponse, pathname: string) {
+  if (req.method !== 'POST') return json(res, 405, { error: 'POST 만 받아요' });
+  if (!originAllowed(req)) return json(res, 403, { error: '다른 사이트에서 온 요청이에요' });
+  const ip = clientIp(req), b = bucket(ip);
+  if (pathname === '/api/run/start') {
+    if (!b.start.take()) return json(res, 429, { error: '잠시 뒤에 다시 시작해 주세요' });
+    return json(res, 200, issueRun());
+  }
+  if (pathname === '/api/run/finish') {
+    if (!b.finish.take()) return json(res, 429, { error: '잠시 뒤에 다시 올려 주세요' });
+    // 토큰은 헤더로 받아 본문을 읽기 전에 확인한다
+    const token = req.headers['x-run-token'];
+    const pre = precheckToken(token);
+    if (!pre.ok) { req.resume(); return json(res, pre.status, { ok: false, error: pre.error }); }
+    if (waiting >= MAX_WAITING) { req.resume(); return json(res, 503, { ok: false, error: '검증할 기록이 많아요. 잠시 뒤에 다시 올려 주세요' }); }
+    waiting++;
+    try {
+      let body: { log?: unknown };
+      try { body = (await readBody(req)) as typeof body; } catch { return json(res, 400, { ok: false, error: '기록을 읽지 못했어요' }); }
+      const job = verifying.then(() => finishRun(token, body?.log));
+      verifying = job.catch(() => undefined);
+      const r = await job;
+      return r.ok ? json(res, 200, { ok: true, ...r.result }) : json(res, r.status, { ok: false, error: r.error });
+    } catch { return json(res, 500, { ok: false, error: '검증 중 문제가 생겼어요' }); }
+    finally { waiting--; }
+  }
+  return json(res, 404, { error: '없는 API 예요' });
+}
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
-  if (url.pathname === '/healthz') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ ok: true, version: APP_VERSION, sessions: sessions.size })); return; }
+  if (url.pathname === '/healthz') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ ok: true, version: APP_VERSION })); return; }
+  if (url.pathname.startsWith('/api/')) { void api(req, res, url.pathname); return; }
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); res.end(); return; }
   // dist 밖으로 나가는 경로는 막는다
   const rel = url.pathname === '/' ? 'index.html' : decodeURIComponent(url.pathname).replace(/^\/+/, '');
@@ -40,69 +99,5 @@ const server = http.createServer((req, res) => {
   src.pipe(res);
 });
 
-const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MSG_BYTES });
-const perIp = new Map<string, number>();
-const sessions = new Set<{ s: Session; ws: WebSocket }>();
-
-server.on('upgrade', (req, socket, head) => {
-  const ip = clientIp(req);
-  const reject = (code: number) => { socket.write(`HTTP/1.1 ${code} x\r\n\r\n`); socket.destroy(); };
-  if (new URL(req.url ?? '/', 'http://x').pathname !== '/ws') return reject(404);
-  if (!originAllowed(req)) return reject(403);
-  if (sessions.size >= MAX_CONNS || (perIp.get(ip) ?? 0) >= MAX_PER_IP) return reject(429);
-  wss.handleUpgrade(req, socket, head, ws => {
-    perIp.set(ip, (perIp.get(ip) ?? 0) + 1);
-    const send = (m: ServerMsg) => { if (ws.readyState === WebSocket.OPEN && ws.bufferedAmount < 256 * 1024) ws.send(JSON.stringify(m)); };
-    const entry = { s: new Session(send), ws };
-    sessions.add(entry);
-    // 정상 클라이언트는 틱(30Hz)마다 한 번 남짓 보낸다. 넉넉히 초당 60개, 순간 120개
-    const bucket = new TokenBucket(120, 60);
-    // 살아 있는지 확인: 30초마다 ping, 다음 확인 전까지 pong 이 오면 살아 있다.
-    // (handleUpgrade 로 받은 연결에는 'connection' 이벤트가 오지 않으므로 여기서 직접 건다.
-    //  전에는 그쪽에 걸어서 pong 을 받지 못해, 정상 연결도 30~60초 뒤에 끊겼다)
-    const live = ws as WebSocket & { alive?: boolean };
-    live.alive = true;
-    ws.on('pong', () => { live.alive = true; });
-    let violations = 0, lastViolation = 0;
-    send({ t: 'hello', v: PROTOCOL_VERSION });
-    ws.on('message', (data, isBinary) => {
-      // 위반은 10초 동안 조용하면 지운다 (오래 하다 보면 가끔 생기는 것이 쌓여 끊기지 않게)
-      if (violations > 0 && Date.now() - lastViolation > 10_000) violations = 0;
-      if (!bucket.take()) { violations++; lastViolation = Date.now(); }
-      else {
-        const m = isBinary ? null : parseClientMsg(data.toString());
-        if (m) entry.s.handle(m); else { violations++; lastViolation = Date.now(); }
-      }
-      if (violations >= MAX_VIOLATIONS) ws.close(1008, 'policy');
-    });
-    ws.on('close', () => {
-      sessions.delete(entry);
-      const n = (perIp.get(ip) ?? 1) - 1;
-      if (n <= 0) perIp.delete(ip); else perIp.set(ip, n);
-    });
-    ws.on('error', () => ws.terminate());
-  });
-});
-
-// 게임 루프: 30Hz. setInterval 은 조금씩 밀려서(틱이 늦어지면 입력이 쌓여 반응이 늦어진다) 다음 틱 시각을 직접 맞춘다
-let nextTick = performance.now();
-function loop() {
-  const now = performance.now();
-  let n = 0;
-  while (now >= nextTick && n < 3) { for (const e of sessions) e.s.tick(); nextTick += TICK * 1000; n++; }
-  if (now - nextTick > 1000) nextTick = now; // 오래 멈췄다 깨어나면 따라잡지 않는다
-  setTimeout(loop, Math.max(0, nextTick - performance.now()));
-}
-loop();
-
-// 응답 없는 연결 정리
-setInterval(() => {
-  for (const e of sessions) {
-    const w = e.ws as WebSocket & { alive?: boolean };
-    if (w.alive === false) { w.terminate(); continue; }
-    w.alive = false; w.ping();
-  }
-}, Number(process.env.PING_MS ?? 30_000)).unref();
-
 server.listen(PORT, () => console.log(`[server] http://localhost:${PORT}`));
-for (const sig of ['SIGTERM', 'SIGINT'] as const) process.on(sig, () => { wss.clients.forEach(c => c.close(1001)); server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 3000).unref(); });
+for (const sig of ['SIGTERM', 'SIGINT'] as const) process.on(sig, () => { server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 3000).unref(); });

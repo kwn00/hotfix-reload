@@ -31,3 +31,6 @@ services:
       # Render 앞단(Cloudflare)이 덮어쓰는 단일 값 헤더로 클라이언트 IP 를 읽는다 (X-Forwarded-For 는 위조 가능).
       - key: CLIENT_IP_HEADER
         value: cf-connecting-ip
+      # 판 토큰 서명 키. Render 가 처음 한 번 무작위로 만들고 이후 유지한다 (없으면 서버가 뜰 때마다 새로 만든다)
+      - key: SESSION_SECRET
+        generateValue: true

@@ -202,10 +202,10 @@ export class GunRig {
     this.flies = [];
   }
 
-  /** 방아쇠: 클릭하는 순간 (탄이 나갔는지는 서버 답을 기다린다) */
+  /** 방아쇠: 클릭하는 순간 */
   trigger() { this.trigPull = 1; }
 
-  /** events: 이번 프레임에 보여 줄 사건 (서버 사건 + 화면에서 미리 보여 주는 장전) */
+  /** events: 이번 프레임에 보여 줄 사건 */
   update(s: SnapMsg, aim: number, dt: number, now: number, events: readonly string[]) {
     const sc = this.pivot.scale.y;
     const fx = this.face; // 날아가는 방향도 총을 따라 뒤집는다
@@ -219,11 +219,6 @@ export class GunRig {
         this.slideTarget = -11; this.slideHold = 0.14;
         if (e === 'rack-waste') this.fly(this.tpl.round, this.portPos(), new THREE.Vector3(fx * 140, 300, 0), sc * 0.9);
         if (e === 'unjam') { this.stovepipe.visible = false; this.fly(this.tpl.stove, this.portPos(), new THREE.Vector3(fx * 160, 280, 0), sc * 0.9); }
-      } else if (e === 'rack-waste-fx') {
-        // 슬라이드는 화면에서 이미 당겼다: 서버가 알려 준, 튀어나온 탄만
-        this.fly(this.tpl.round, this.portPos(), new THREE.Vector3(fx * 140, 300, 0), sc * 0.9);
-      } else if (e === 'unjam-fx') {
-        this.stovepipe.visible = false; this.fly(this.tpl.stove, this.portPos(), new THREE.Vector3(fx * 160, 280, 0), sc * 0.9);
       } else if (e === 'eject') {
         this.magGone = true;
         const at = new THREE.Vector3(MAG_OFFSET.x + 3, -7 - MAG_OFFSET.y - 5, 0).applyMatrix4(this.gun.matrixWorld);

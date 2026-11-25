@@ -1,42 +1,9 @@
-// 서버 ↔ 클라이언트 통신 규격.
-// 클라이언트는 "의도"만 보내고, 서버는 그 플레이어가 볼 수 있는 것만 보낸다.
-// - 벽 · 책상 너머의 적과 그 탄은 보내지 않는다
-// - 탄 수(약실 · 탄창 · 주머니, 주운 탄창의 탄 수)는 점검(git status)을 충분히 들고 있을 때만 보낸다
-// - 방의 적 배치는 보내지 않는다 (지형만 보낸다)
-import { State, Action, ACTION_LIST, Alarm, EnemyKind, CHECK_TIME, visible, clear, pEye, score } from './game.ts';
+// 화면에 그릴 것: 시뮬레이션 상태에서 플레이어가 볼 수 있는 것만 골라 낸다.
+// 게임은 브라우저에서 돌지만, 화면은 이 "보이는 것"만으로 그린다 (탄 수는 점검할 때만, 벽 · 책상 너머의 적은 안 보임).
+// 판정과 점수 검증은 서버가 입력 기록을 다시 돌려서 한다 (replay.ts).
+import { State, Alarm, EnemyKind, CHECK_TIME, visible, clear, pEye, score } from './game.ts';
 import { ROOMS } from './level.ts';
 import { GunEvent } from './gun.ts';
-
-export const PROTOCOL_VERSION = 5;
-export const MAX_MSG_BYTES = 256;
-
-export type ClientMsg =
-  | { t: 'start' }
-  /** 입력 한 틱. seq 는 입력 번호 (서버가 몇 번까지 처리했는지 ack 로 돌려줘서, 화면이 예측을 맞춘다) */
-  | { t: 'in'; seq: number; mx: number; aim: number; jump: boolean; crouch: boolean; fire: boolean; melee: boolean; act: Action | null; slowmo: boolean; check: boolean; interact: boolean };
-
-const ACTS = ACTION_LIST;
-const num = (v: unknown, lo: number, hi: number): number | null =>
-  typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : null;
-
-/** 받은 메시지를 검사한다. 모양이 틀리면 null (서버는 위반으로 센다). 모르는 필드는 버린다. */
-export function parseClientMsg(raw: string): ClientMsg | null {
-  if (raw.length > MAX_MSG_BYTES) return null;
-  let m: unknown;
-  try { m = JSON.parse(raw); } catch { return null; }
-  if (typeof m !== 'object' || m === null || Array.isArray(m)) return null;
-  const o = m as Record<string, unknown>;
-  if (o.t === 'start') return { t: 'start' };
-  if (o.t !== 'in') return null;
-  const mx = num(o.mx, -1, 1), aim = num(o.aim, -Math.PI * 2, Math.PI * 2);
-  if (mx === null || aim === null) return null;
-  const seq = o.seq;
-  if (typeof seq !== 'number' || !Number.isInteger(seq) || seq < 0 || seq > 2 ** 31) return null;
-  const act = o.act === null || o.act === undefined ? null : ACTS.includes(o.act as Action) ? (o.act as Action) : undefined;
-  if (act === undefined) return null;
-  const b = (k: string) => o[k] === true;
-  return { t: 'in', seq, mx, aim, jump: b('jump'), crouch: b('crouch'), fire: b('fire'), melee: b('melee'), act, slowmo: b('slowmo'), check: b('check'), interact: b('interact') };
-}
 
 export interface RoomMsg {
   t: 'room'; room: number; rooms: number; name: string; w: number; h: number;
@@ -48,10 +15,6 @@ export interface EnemyView { id: number; kind: EnemyKind; x: number; y: number; 
 export interface SnapMsg {
   t: 'snap';
   p: { x: number; y: number; vy: number; ground: boolean; crouch: boolean; face: 1 | -1; hp: number; hurt: boolean; melee: boolean };
-  /** 서버가 처리한 마지막 입력 번호 */
-  ack: number;
-  /** 실제로 처리한 마지막 장전 동작의 입력 번호 (총이 바빠 기다린 동작은 처리된 뒤에 올라간다) */
-  actAck: number;
   aim: number; dead: boolean; slowmo: boolean; meter: number;
   enemies: EnemyView[];
   /** 보이는 탄. vx · vy 는 날아가는 방향 · 속도 (화면이 방향대로 돌리고, 틱 사이를 이어 그린다) */
@@ -67,7 +30,6 @@ export interface SnapMsg {
   events: GunEvent[]; log: string[];
   room: number; kills: number; deaths: number; time: number; won: boolean; score: number;
 }
-export type ServerMsg = { t: 'hello'; v: number } | RoomMsg | SnapMsg;
 
 export function roomMsg(s: State): RoomMsg {
   let tiles = ''; for (let i = 0; i < s.map.w * s.map.h; i++) tiles += s.map.tiles[i];
@@ -77,12 +39,11 @@ export function roomMsg(s: State): RoomMsg {
 const r1 = (v: number) => Math.round(v * 10) / 10;
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
-export function snapshot(s: State, ack = 0, actAck = 0): SnapMsg {
+export function snapshot(s: State): SnapMsg {
   const g = s.gun, p = s.p, eye = pEye(p);
   const sees = (x: number, y: number) => clear(s.map, eye.x, eye.y, x, y);
   return {
     t: 'snap',
-    ack, actAck,
     p: { x: p.x, y: p.y, vy: p.vy, ground: p.onGround, crouch: p.crouch, face: p.face, hp: p.hp, hurt: p.invuln > 0, melee: p.melee > 0 },
     aim: r2(s.aim), dead: s.dead > 0, slowmo: s.slowmo, meter: r2(s.meter),
     enemies: s.enemies.filter(e => e.hp > 0 && visible(s, e)).map(e => ({
