@@ -98,7 +98,7 @@ export class GunRig {
   private slotMags: THREE.Group[] = [];
   private slotRounds: THREE.Group[] = [];
   private muzzle: THREE.PointLight;
-  private flashVox: THREE.Mesh;
+
   private flies: Fly[] = [];
   private gunY = 0;
   private gunX = 0;
@@ -129,9 +129,8 @@ export class GunRig {
     this.slide.add(this.stovepipe);
     this.muzzle = new THREE.PointLight(0xffc56b, 0, 80, 1);
     this.muzzle.position.set(44, -3, 6);
-    this.flashVox = new THREE.Mesh(new THREE.BoxGeometry(6, 4, 4), new THREE.MeshBasicMaterial({ color: 0xffe9a8 }));
-    this.flashVox.position.set(43, -3, 0); this.flashVox.visible = false;
-    this.gun.add(frame, this.mag, this.slide, this.muzzle, this.flashVox);
+    // 총구 화염은 모양 없이 빛만: 쏘는 순간 총을 따뜻하게 비춘다
+    this.gun.add(frame, this.mag, this.slide, this.muzzle);
     this.gun.position.set(-GUN_C.x, -GUN_C.y, 0);
     this.pivot.rotation.set(0.12, -0.42, 0); // 살짝 돌려 입체감 (가운데를 축으로)
     this.pivot.add(this.gun);
@@ -143,18 +142,20 @@ export class GunRig {
     }
   }
 
-  /** w · h: 그리는 영역 (총이 기울어도 잘리지 않게 위로 넉넉하다). band: 총 · 칸의 크기를 정하는 아래 띠 높이 */
-  resize(w: number, h: number, band = h) {
+  /** w · h: 아래 레터박스의 크기. 총이 기울어도 띠 밖으로 나가지 않게 크기를 정한다 */
+  resize(w: number, h: number) {
     this.renderer.setSize(w, h, false);
     this.camera.left = 0; this.camera.right = w; this.camera.top = h; this.camera.bottom = 0; this.camera.updateProjectionMatrix();
     // 총: 오른쪽 아래에 크게. 칸: 왼쪽 아래에 나란히
     const narrow = w < 700;
-    const scale = Math.min(w * (narrow ? 0.5 : 0.38) / 44, (band - 8) / 29);
+    const scale = Math.min(w * (narrow ? 0.5 : 0.38) / 44, (h - 6) / 31);
     this.pivot.scale.set(scale * this.face, scale, scale);
-    this.gunY = 27 * scale + 4 + GUN_C.y * scale;
-    this.gunX = w - scale * (narrow ? 42 : 47) + GUN_C.x * scale;
+    // 총 그림의 세로 가운데(슬라이드 위 0 ~ 탄창 아래 -27)를 띠 가운데에
+    this.gunY = h / 2 + (13.5 + GUN_C.y) * scale;
+    // 총구 앞에 화염이 들어갈 자리를 남긴다 (오른쪽 끝에 붙이면 화염이 화면 밖으로 잘린다)
+    this.gunX = w - scale * (narrow ? 52 : 58) + GUN_C.x * scale;
     this.pivot.position.set(this.gunX, this.gunY, 0);
-    const slotScale = Math.max(3, Math.min(scale * 0.7, (band - 30) / 12));
+    const slotScale = Math.max(3, Math.min(scale * 0.7, (h - 30) / 12));
     const gap = narrow ? w * 0.11 : Math.min(110, w * 0.08);
     this.layout.slots = [];
     for (let i = 0; i < 4; i++) {
@@ -202,7 +203,7 @@ export class GunRig {
     for (const e of fresh ? s.events : []) {
       if (e === 'fire' || e === 'jam') {
         this.slideX = -9; this.slideTarget = 0; this.recoil = 1;
-        this.muzzle.intensity = 400; this.flashVox.visible = true;
+        this.muzzle.intensity = 400;
         if (e === 'fire') this.fly(this.tpl.casing, this.portPos(), new THREE.Vector3(fx * (120 + Math.random() * 80), 260 + Math.random() * 80, 0), sc * 0.9);
         if (e === 'jam') this.stovepipe.visible = true;
       } else if (e === 'rack' || e === 'rack-waste' || e === 'unjam') {
@@ -235,7 +236,6 @@ export class GunRig {
 
     // 총구 화염
     this.muzzle.intensity *= Math.pow(0.0005, dt);
-    if (this.muzzle.intensity < 40) this.flashVox.visible = false;
 
     // 반동 · 숨쉬기 · 조준 방향에 따라 살짝 기울기
     this.recoil *= Math.pow(0.002, dt);

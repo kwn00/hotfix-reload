@@ -2,6 +2,8 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font-family: ui-monospace, Menlo, Consolas, monospace; overflow: hidden; user-select: none; -webkit-user-select: none; }
 canvas { display: block; width: 100vw; height: 100vh; }
+/* 게임 화면은 아래 레터박스를 뺀 위쪽만 쓴다 */
+#c { height: calc(100vh - var(--band)); }
 .hidden { display: none !important; }
 .panel { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 16px; background: rgba(17,17,27,.9); text-align: center; word-break: keep-all; }
 h1 { margin: 0; color: var(--accent); font-size: clamp(28px, 8vw, 48px); text-shadow: 0 0 18px rgba(166,227,161,.5); }
@@ -21,9 +23,10 @@ button:disabled { opacity: .6; }
 .news-box button { margin-top: 8px; width: 100%; }
 
 /* HUD */
-/* 총 리그는 아래 띠(--band) 높이로 크기를 정하지만, 총을 위로 기울여도 잘리지 않게 그리는 영역은 더 높게 잡는다 */
-:root { --band: clamp(150px, 34vh, 320px); }
-#rig { position: fixed; left: 0; right: 0; bottom: 0; width: 100vw; height: min(100vh, calc(var(--band) * 2)); pointer-events: none; z-index: 1; }
+/* 아래 레터박스: 탄창 칸과 총 리그는 이 띠 안에만 그린다 (게임 화면을 가리지 않게) */
+:root { --band: clamp(140px, 25vh, 250px); }
+#rig { position: fixed; left: 0; right: 0; bottom: 0; width: 100vw; height: var(--band); pointer-events: none; z-index: 1;
+  background: linear-gradient(#07070b, #0b0b12); border-top: 1px solid #1e1e2e; }
 #hud { position: fixed; inset: 0; pointer-events: none; font-size: 13px; text-shadow: 0 1px 2px #000; z-index: 2; }
 #hud .tl { position: absolute; left: 14px; top: 8px; }
 #hud .big { font-size: clamp(20px, 3.4vw, 34px); font-weight: bold; letter-spacing: -1px; color: #eff1f5; line-height: 1.15; }
@@ -34,9 +37,9 @@ button:disabled { opacity: .6; }
 .alarm.calm { color: #a6e3a1; } .alarm.alert { color: #f9e2af; } .alarm.alarmed { color: #f38ba8; animation: blink .6s steps(2) infinite; }
 @keyframes blink { 50% { opacity: .55; } }
 .dim { color: var(--dim); }
-.term { position: absolute; left: 14px; bottom: calc(clamp(150px, 34vh, 320px) + 4px); color: var(--accent); white-space: pre; background: rgba(17,17,27,.75); padding: 4px 8px; border-radius: 4px; }
+.term { position: absolute; left: 14px; bottom: calc(var(--band) + 10px); color: var(--accent); white-space: pre; background: rgba(17,17,27,.75); padding: 4px 8px; border-radius: 4px; }
 .term:empty { display: none; }
-#log { position: absolute; left: 14px; bottom: calc(clamp(150px, 34vh, 320px) + 64px); display: flex; flex-direction: column; gap: 2px; max-width: calc(100vw - 28px); }
+#log { position: absolute; left: 14px; bottom: calc(var(--band) + 70px); display: flex; flex-direction: column; gap: 2px; max-width: calc(100vw - 28px); }
 #log div { background: var(--panel); padding: 2px 6px; border-radius: 4px; width: fit-content; }
 #center { position: absolute; left: 0; right: 0; top: 36%; text-align: center; font-size: clamp(18px, 4vw, 28px); font-weight: bold; white-space: pre-line; }
 #center.bad { color: var(--danger); } #center.good { color: var(--accent); }

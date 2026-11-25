@@ -57,13 +57,21 @@ server.on('upgrade', (req, socket, head) => {
     sessions.add(entry);
     // 정상 클라이언트는 틱(30Hz)마다 한 번 남짓 보낸다. 넉넉히 초당 60개, 순간 120개
     const bucket = new TokenBucket(120, 60);
-    let violations = 0;
+    // 살아 있는지 확인: 30초마다 ping, 다음 확인 전까지 pong 이 오면 살아 있다.
+    // (handleUpgrade 로 받은 연결에는 'connection' 이벤트가 오지 않으므로 여기서 직접 건다.
+    //  전에는 그쪽에 걸어서 pong 을 받지 못해, 정상 연결도 30~60초 뒤에 끊겼다)
+    const live = ws as WebSocket & { alive?: boolean };
+    live.alive = true;
+    ws.on('pong', () => { live.alive = true; });
+    let violations = 0, lastViolation = 0;
     send({ t: 'hello', v: PROTOCOL_VERSION });
     ws.on('message', (data, isBinary) => {
-      if (!bucket.take()) { violations++; }
+      // 위반은 10초 동안 조용하면 지운다 (오래 하다 보면 가끔 생기는 것이 쌓여 끊기지 않게)
+      if (violations > 0 && Date.now() - lastViolation > 10_000) violations = 0;
+      if (!bucket.take()) { violations++; lastViolation = Date.now(); }
       else {
         const m = isBinary ? null : parseClientMsg(data.toString());
-        if (m) entry.s.handle(m); else violations++;
+        if (m) entry.s.handle(m); else { violations++; lastViolation = Date.now(); }
       }
       if (violations >= MAX_VIOLATIONS) ws.close(1008, 'policy');
     });
@@ -85,8 +93,7 @@ setInterval(() => {
     if (w.alive === false) { w.terminate(); continue; }
     w.alive = false; w.ping();
   }
-}, 30_000).unref();
-wss.on('connection', ws => ws.on('pong', () => { (ws as WebSocket & { alive?: boolean }).alive = true; }));
+}, Number(process.env.PING_MS ?? 30_000)).unref();
 
 server.listen(PORT, () => console.log(`[server] http://localhost:${PORT}`));
 for (const sig of ['SIGTERM', 'SIGINT'] as const) process.on(sig, () => { wss.clients.forEach(c => c.close(1001)); server.close(() => process.exit(0)); setTimeout(() => process.exit(0), 3000).unref(); });

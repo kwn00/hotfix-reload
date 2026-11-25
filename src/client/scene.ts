@@ -335,12 +335,15 @@ export class Scene3D {
     // 카메라: 살짝 위에서 내려다보며 따라간다 (조준 방향으로 조금 앞을 본다)
     const W = this.room.w * TILE;
     const narrow = this.camera.aspect < 1;
-    const dist = (narrow ? 900 : 640) - 120 * this.slow;
+    // 방 높이(천장~바닥)가 화면에 꽉 차는 거리. 슬로모션에는 플레이어 쪽으로 다가간다
+    const roomH = this.room.h * TILE;
+    const fit = (roomH * 1.06) / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)));
+    const dist = (narrow ? Math.max(fit, 900) : fit) - 120 * this.slow;
     // 방 바깥(빈 공간)이 보이지 않게 카메라를 방 안에 묶는다
     const halfW = dist * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * this.camera.aspect * 0.92;
     const lookX = W <= halfW * 2 ? W / 2 : Math.max(halfW, Math.min(W - halfW, px + Math.cos(aim) * 60));
-    const lookY = -py + 115;
-    const target = new THREE.Vector3(lookX + 40 * this.slow, lookY + 60 - 20 * this.slow, dist);
+    const lookY = (-roomH / 2 + 6) * (1 - this.slow) + (-py + 60) * this.slow;
+    const target = new THREE.Vector3(lookX + 40 * this.slow, lookY + 40 - 20 * this.slow, dist);
     if (this.camPos.lengthSq() === 0) { this.camPos.copy(target); this.camLook.set(lookX, lookY, 0); }
     this.camPos.lerp(target, Math.min(1, dt * 5));
     this.camLook.lerp(new THREE.Vector3(lookX, lookY, 0), Math.min(1, dt * 6));
