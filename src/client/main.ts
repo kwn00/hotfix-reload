@@ -30,15 +30,10 @@ function saveBest(v: number) { try { if (v > best()) localStorage.setItem('hr-be
 function showBest() { const b = best(); bestEl.textContent = b ? `최고 점수 ${b}` : ''; }
 showBest();
 
-// 아래 띠 높이(CSS 의 --band)를 재는 빈 요소
-const bandProbe = document.createElement('div');
-bandProbe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;height:var(--band);width:0';
-document.body.append(bandProbe);
 const slotBtns = Array.from(document.querySelectorAll<HTMLButtonElement>('#slots button'));
 function resize() {
-  scene.resize(innerWidth, innerHeight);
-  const band = parseFloat(getComputedStyle(bandProbe).height) || 200;
-  rig.resize(rigCv.clientWidth, rigCv.clientHeight, band);
+  scene.resize(cv.clientWidth, cv.clientHeight);
+  rig.resize(rigCv.clientWidth, rigCv.clientHeight);
   slotBtns.forEach((b, i) => { const p = i < 4 ? rig.layout.slots[i] : rig.layout.grip; b.style.left = `${p.x}px`; });
 }
 addEventListener('resize', resize); resize();
@@ -113,7 +108,7 @@ for (const b of slotBtns) {
 function currentAim(): number {
   if (!snap) return 0;
   const gx = snap.p.x, gy = snap.p.y - (snap.p.crouch ? 18 : 36);
-  const w = scene.screenToWorld(mouse.x, mouse.y, innerWidth, innerHeight);
+  const w = scene.screenToWorld(mouse.x, mouse.y, cv.clientWidth, cv.clientHeight);
   return Math.atan2(w.y - gy, w.x - gx);
 }
 
