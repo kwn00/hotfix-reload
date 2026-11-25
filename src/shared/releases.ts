@@ -21,6 +21,14 @@ export interface ReleaseNote {
 /** 최신 버전이 맨 위 */
 export const RELEASES: readonly ReleaseNote[] = [
   {
+    version: '0.3.2',
+    date: '2026-11-25',
+    title: '한글 입력 상태에서도 키가 먹어요',
+    items: [
+      '한/영을 바꾸지 않아도 키가 바로 먹어요.',
+    ],
+  },
+  {
     version: '0.3.1',
     date: '2026-11-25',
     title: '조작법이 화면 위에 보여요',
