@@ -1,7 +1,7 @@
 {
   "name": "hotfix-reload",
   "private": true,
-  "version": "0.4.2",
+  "version": "0.4.3",
   "type": "module",
   "scripts": {
     "dev": "concurrently -n server,client -c magenta,cyan \"npm run dev:server\" \"vite\"",
