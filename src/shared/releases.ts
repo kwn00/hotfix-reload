@@ -21,6 +21,14 @@ export interface ReleaseNote {
 /** 최신 버전이 맨 위 */
 export const RELEASES: readonly ReleaseNote[] = [
   {
+    version: '0.4.3',
+    date: '2026-11-26',
+    title: '탭 이름이 영어로 바뀌었어요',
+    items: [
+      '브라우저 탭에 HOTFIX RELOAD 로 보여요.',
+    ],
+  },
+  {
     version: '0.4.2',
     date: '2026-11-25',
     title: '가려진 적도 흐리게 보여요',
